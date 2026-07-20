@@ -2,8 +2,10 @@
   "name": "aac",
   "private": true,
   "scripts": {
+    "dev": "pnpm -r --parallel --filter \"./apps/*\" run dev",
+    "dev:api": "pnpm --filter api dev",
     "dev:manager": "pnpm --filter manager dev",
-    "dev:app": "pnpm --filter app start",
+    "dev:app": "pnpm --filter app dev",
     "build:manager": "pnpm --filter manager build"
   },
   "engines": {
