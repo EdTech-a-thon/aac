@@ -1,0 +1,13 @@
+{
+  "name": "aac",
+  "private": true,
+  "scripts": {
+    "dev:manager": "pnpm --filter manager dev",
+    "dev:app": "pnpm --filter app start",
+    "build:manager": "pnpm --filter manager build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.15.1"
+}
