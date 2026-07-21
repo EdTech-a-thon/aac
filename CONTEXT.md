@@ -17,7 +17,7 @@ A grid that belongs to exactly one Vocabulary, with a width and height (columns 
 _Avoid_: Page, screen, grid (as the name of this concept)
 
 **Button**:
-An occupant on a Board, identified by 0-based row and column indices, with a label that may be blank. Empty cells in the viewport are the absence of a Button in that cell, not a blank Button. Multiple Buttons may share the same coordinates; Buttons may sit outside the Board's width/height viewport and remain part of the Board. Draw/hit order when Buttons overlap is unspecified. Press behavior is out of scope for now.
+An occupant on a Board, identified by 0-based row and column indices, with a label that may be blank and a background color (CSS hex `#RRGGBB`, default white). Empty cells in the viewport are the absence of a Button in that cell, not a blank Button. Multiple Buttons may share the same coordinates; Buttons may sit outside the Board's width/height viewport and remain part of the Board. Draw/hit order when Buttons overlap is unspecified. Press behavior is out of scope for now.
 _Avoid_: Cell, tile, key
 
 **Management relationship**:
