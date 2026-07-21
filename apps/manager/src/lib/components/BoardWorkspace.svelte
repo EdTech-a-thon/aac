@@ -4,6 +4,11 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { apiFetch, type AuthState } from '$lib/auth';
 	import {
+		diffBoardButtonMutations,
+		type BoardSnapshot,
+		type ButtonSnapshot
+	} from '$lib/changeSetMutations';
+	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
 		FITZGERALD_COLORS,
@@ -25,28 +30,31 @@
 	const MAX_ZOOM = 4;
 
 	let boards = $state<Board[]>([]);
+	let buttonsByBoardId = $state<Record<string, BoardButton[]>>({});
+	let baseBoards = $state<Board[]>([]);
+	let baseButtonsByBoardId = $state<Record<string, BoardButton[]>>({});
 	let selectedBoardId = $state<string | null>(null);
-	let buttons = $state<BoardButton[]>([]);
 	let selectedButtonId = $state<string | null>(null);
 	let loadingBoards = $state(true);
 	let loadingButtons = $state(false);
 	let error = $state<string | null>(null);
+	let submitError = $state<string | null>(null);
+	let submitting = $state(false);
 
 	let createOpen = $state(false);
 	let newBoardName = $state('');
-	let creating = $state(false);
 	let createError = $state<string | null>(null);
 
 	let renameOpen = $state(false);
 	let renameDraft = $state('');
-	let renaming = $state(false);
 	let renameError = $state<string | null>(null);
 
 	let deleteOpen = $state(false);
-	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 
 	let canvasEl = $state<HTMLDivElement | null>(null);
+	let canvasWidth = $state(0);
+	let canvasHeight = $state(0);
 	let panX = $state(0);
 	let panY = $state(0);
 	let zoom = $state(1);
@@ -55,14 +63,15 @@
 	let panPointerId = $state<number | null>(null);
 	let panOrigin = $state({ x: 0, y: 0, panX: 0, panY: 0 });
 	let didPan = $state(false);
+	let panFromBackground = $state(false);
 	let fittedBoardId = $state<string | null>(null);
 
 	let labelDraft = $state('');
 	let colorDraft = $state(DEFAULT_BUTTON_COLOR);
-	let savingProps = $state(false);
+	let widthDraft = $state(4);
+	let heightDraft = $state(4);
 	let propsError = $state<string | null>(null);
-	let labelSaveTimer: ReturnType<typeof setTimeout> | null = null;
-	let deletingButton = $state(false);
+	let boardSizeError = $state<string | null>(null);
 
 	let drag = $state<{
 		buttonId: string;
@@ -79,6 +88,10 @@
 
 	const BOARD_PAD = 12;
 
+	const buttons = $derived(
+		selectedBoardId ? (buttonsByBoardId[selectedBoardId] ?? []) : []
+	);
+
 	const selectedBoard = $derived(
 		boards.find((board) => board.id === selectedBoardId) ?? null
 	);
@@ -86,6 +99,17 @@
 	const selectedButton = $derived(
 		buttons.find((button) => button.id === selectedButtonId) ?? null
 	);
+
+	const pendingMutations = $derived(
+		diffBoardButtonMutations(
+			baseBoards.map(toBoardSnapshot),
+			allButtonsFromMap(baseButtonsByBoardId).map(toButtonSnapshot),
+			boards.map(toBoardSnapshot),
+			allButtonsFromMap(buttonsByBoardId).map(toButtonSnapshot)
+		)
+	);
+
+	const isDirty = $derived(pendingMutations.length > 0);
 
 	const viewportCells = $derived.by(() => {
 		const board = selectedBoard;
@@ -116,6 +140,58 @@
 			? selectedBoard.height * CELL + Math.max(0, selectedBoard.height - 1) * GAP
 			: 0
 	);
+
+	const boardFramePad = BOARD_PAD * 2;
+
+	const isBoardOffscreen = $derived.by(() => {
+		if (!selectedBoard || canvasWidth <= 0 || canvasHeight <= 0) return false;
+		const frameW = (boardPixelWidth + boardFramePad) * zoom;
+		const frameH = (boardPixelHeight + boardFramePad) * zoom;
+		const left = panX;
+		const top = panY;
+		const right = left + frameW;
+		const bottom = top + frameH;
+		return right < 0 || left > canvasWidth || bottom < 0 || top > canvasHeight;
+	});
+
+	function toBoardSnapshot(board: Board): BoardSnapshot {
+		return {
+			id: board.id,
+			name: board.name,
+			width: board.width,
+			height: board.height
+		};
+	}
+
+	function toButtonSnapshot(button: BoardButton): ButtonSnapshot {
+		return {
+			id: button.id,
+			board_id: button.board_id,
+			row_index: button.row_index,
+			col_index: button.col_index,
+			label: button.label,
+			background_color: button.background_color
+		};
+	}
+
+	function allButtonsFromMap(map: Record<string, BoardButton[]>) {
+		return Object.values(map).flat();
+	}
+
+	function setBaseFromCurrent() {
+		baseBoards = structuredClone(boards);
+		baseButtonsByBoardId = structuredClone(buttonsByBoardId);
+	}
+
+	function setCurrentBoardButtons(next: BoardButton[]) {
+		if (!selectedBoardId) return;
+		buttonsByBoardId = { ...buttonsByBoardId, [selectedBoardId]: next };
+	}
+
+	function boardDisplayName(name: string) {
+		const trimmed = name.trim();
+		return trimmed ? trimmed : 'Untitled';
+	}
 
 	function cellLeft(col: number) {
 		return col * (CELL + GAP);
@@ -153,13 +229,33 @@
 
 		(async () => {
 			loadingBoards = true;
+			loadingButtons = true;
 			error = null;
+			submitError = null;
 			try {
 				const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
 					accessToken: token
 				});
 				if (cancelled) return;
+
+				const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
+				await Promise.all(
+					data.boards.map(async (board) => {
+						const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
+							`/vocabularies/${id}/boards/${board.id}/buttons`,
+							{ accessToken: token }
+						);
+						if (!cancelled) {
+							nextButtonsByBoardId[board.id] = buttonData.buttons;
+						}
+					})
+				);
+				if (cancelled) return;
+
 				boards = data.boards;
+				buttonsByBoardId = nextButtonsByBoardId;
+				setBaseFromCurrent();
+
 				if (data.boards.length === 0) {
 					selectedBoardId = null;
 				} else if (
@@ -172,7 +268,10 @@
 				if (cancelled) return;
 				error = err instanceof Error ? err.message : 'Failed to load boards';
 			} finally {
-				if (!cancelled) loadingBoards = false;
+				if (!cancelled) {
+					loadingBoards = false;
+					loadingButtons = false;
+				}
 			}
 		})();
 
@@ -182,38 +281,8 @@
 	});
 
 	$effect(() => {
-		const vocabId = vocabularyId;
-		const boardId = selectedBoardId;
-		const token = auth.session.access_token;
+		selectedBoardId;
 		selectedButtonId = null;
-		if (!boardId) {
-			buttons = [];
-			return;
-		}
-
-		let cancelled = false;
-
-		(async () => {
-			loadingButtons = true;
-			error = null;
-			try {
-				const data = await apiFetch<{ buttons: BoardButton[] }>(
-					`/vocabularies/${vocabId}/boards/${boardId}/buttons`,
-					{ accessToken: token }
-				);
-				if (cancelled) return;
-				buttons = data.buttons;
-			} catch (err) {
-				if (cancelled) return;
-				error = err instanceof Error ? err.message : 'Failed to load buttons';
-			} finally {
-				if (!cancelled) loadingButtons = false;
-			}
-		})();
-
-		return () => {
-			cancelled = true;
-		};
 	});
 
 	$effect(() => {
@@ -226,12 +295,21 @@
 	});
 
 	$effect(() => {
-		const id = selectedButtonId;
-
-		if (labelSaveTimer) {
-			clearTimeout(labelSaveTimer);
-			labelSaveTimer = null;
+		const id = selectedBoardId;
+		if (!id) {
+			widthDraft = 4;
+			heightDraft = 4;
+			boardSizeError = null;
+			return;
 		}
+		const board = untrack(() => boards.find((b) => b.id === id));
+		widthDraft = board?.width ?? 4;
+		heightDraft = board?.height ?? 4;
+		boardSizeError = null;
+	});
+
+	$effect(() => {
+		const id = selectedButtonId;
 
 		if (!id) {
 			labelDraft = '';
@@ -258,6 +336,25 @@
 		return () => el.removeEventListener('wheel', onWheel);
 	});
 
+	$effect(() => {
+		const el = canvasEl;
+		if (!el) {
+			canvasWidth = 0;
+			canvasHeight = 0;
+			return;
+		}
+
+		const syncSize = () => {
+			canvasWidth = el.clientWidth;
+			canvasHeight = el.clientHeight;
+		};
+		syncSize();
+
+		const observer = new ResizeObserver(syncSize);
+		observer.observe(el);
+		return () => observer.disconnect();
+	});
+
 	function isEditableTarget(target: EventTarget | null) {
 		if (!(target instanceof HTMLElement)) return false;
 		if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -278,8 +375,7 @@
 			if (
 				(event.key === 'Backspace' || event.key === 'Delete') &&
 				!isEditableTarget(event.target) &&
-				selectedButtonId &&
-				!deletingButton
+				selectedButtonId
 			) {
 				event.preventDefault();
 				deleteSelectedButton();
@@ -302,26 +398,28 @@
 		createOpen = true;
 	}
 
-	async function createBoard(event: SubmitEvent) {
+	function createBoard(event: SubmitEvent) {
 		event.preventDefault();
-		creating = true;
 		createError = null;
-		try {
-			const data = await apiFetch<{ board: Board }>(`/vocabularies/${vocabularyId}/boards`, {
-				method: 'POST',
-				accessToken: auth.session.access_token,
-				body: JSON.stringify({ name: newBoardName })
-			});
-			boards = [...boards, data.board];
-			selectedBoardId = data.board.id;
-			fittedBoardId = null;
-			createOpen = false;
-			newBoardName = '';
-		} catch (err) {
-			createError = err instanceof Error ? err.message : 'Failed to create board';
-		} finally {
-			creating = false;
-		}
+		const name = newBoardName;
+		const id = crypto.randomUUID();
+		const now = new Date().toISOString();
+		const board: Board = {
+			id,
+			vocabulary_id: vocabularyId,
+			name,
+			displayName: boardDisplayName(name),
+			width: 4,
+			height: 4,
+			created_at: now,
+			updated_at: now
+		};
+		boards = [...boards, board];
+		buttonsByBoardId = { ...buttonsByBoardId, [id]: [] };
+		selectedBoardId = id;
+		fittedBoardId = null;
+		createOpen = false;
+		newBoardName = '';
 	}
 
 	function openRename() {
@@ -331,27 +429,18 @@
 		renameOpen = true;
 	}
 
-	async function renameBoard(event: SubmitEvent) {
+	function renameBoard(event: SubmitEvent) {
 		event.preventDefault();
 		if (!selectedBoard) return;
-		renaming = true;
 		renameError = null;
-		try {
-			const data = await apiFetch<{ board: Board }>(
-				`/vocabularies/${vocabularyId}/boards/${selectedBoard.id}`,
-				{
-					method: 'PATCH',
-					accessToken: auth.session.access_token,
-					body: JSON.stringify({ name: renameDraft })
-				}
-			);
-			boards = boards.map((board) => (board.id === data.board.id ? data.board : board));
-			renameOpen = false;
-		} catch (err) {
-			renameError = err instanceof Error ? err.message : 'Failed to rename board';
-		} finally {
-			renaming = false;
-		}
+		const name = renameDraft;
+		const now = new Date().toISOString();
+		boards = boards.map((board) =>
+			board.id === selectedBoard.id
+				? { ...board, name, displayName: boardDisplayName(name), updated_at: now }
+				: board
+		);
+		renameOpen = false;
 	}
 
 	function openDelete() {
@@ -359,24 +448,47 @@
 		deleteOpen = true;
 	}
 
-	async function deleteBoard() {
+	function deleteBoard() {
 		if (!selectedBoard) return;
-		deleting = true;
 		deleteError = null;
+		const id = selectedBoard.id;
+		boards = boards.filter((board) => board.id !== id);
+		const { [id]: _removed, ...rest } = buttonsByBoardId;
+		buttonsByBoardId = rest;
+		selectedBoardId = boards[0]?.id ?? null;
+		fittedBoardId = null;
+		deleteOpen = false;
+	}
+
+	async function submitChangeSet(status: 'applied' | 'suggested') {
+		if (submitting || pendingMutations.length === 0) return;
+		submitting = true;
+		submitError = null;
+		error = null;
 		try {
-			const id = selectedBoard.id;
-			await apiFetch(`/vocabularies/${vocabularyId}/boards/${id}`, {
-				method: 'DELETE',
-				accessToken: auth.session.access_token
+			await apiFetch(`/vocabularies/${vocabularyId}/change-sets`, {
+				method: 'POST',
+				accessToken: auth.session.access_token,
+				body: JSON.stringify({ status, mutations: pendingMutations })
 			});
-			boards = boards.filter((board) => board.id !== id);
-			selectedBoardId = boards[0]?.id ?? null;
-			fittedBoardId = null;
-			deleteOpen = false;
+			setBaseFromCurrent();
 		} catch (err) {
-			deleteError = err instanceof Error ? err.message : 'Failed to delete board';
-			deleting = false;
+			submitError = err instanceof Error ? err.message : 'Failed to submit changes';
+		} finally {
+			submitting = false;
 		}
+	}
+
+	function discardChanges() {
+		boards = structuredClone(baseBoards);
+		buttonsByBoardId = structuredClone(baseButtonsByBoardId);
+		if (!selectedBoardId || !boards.some((board) => board.id === selectedBoardId)) {
+			selectedBoardId = boards[0]?.id ?? null;
+		}
+		selectedButtonId = null;
+		submitError = null;
+		propsError = null;
+		boardSizeError = null;
 	}
 
 	function selectButton(button: BoardButton, event?: MouseEvent) {
@@ -465,162 +577,67 @@
 			return;
 		}
 
-		await moveButton(snapshot.buttonId, snapshot.currentRow, snapshot.currentCol);
+		moveButton(snapshot.buttonId, snapshot.currentRow, snapshot.currentCol);
 		queueMicrotask(() => {
 			didDrag = false;
 		});
 	}
 
-	async function moveButton(buttonId: string, row: number, col: number) {
+	function moveButton(buttonId: string, row: number, col: number) {
 		const button = buttons.find((b) => b.id === buttonId);
-		if (!button || !selectedBoard) return;
+		if (!button || !selectedBoardId) return;
 		if (button.row_index === row && button.col_index === col) return;
 
-		// Optimistic update
-		buttons = buttons.map((b) =>
-			b.id === buttonId ? { ...b, row_index: row, col_index: col } : b
-		);
-		error = null;
-		try {
-			const data = await apiFetch<{ button: BoardButton }>(
-				`/vocabularies/${vocabularyId}/boards/${selectedBoard.id}/buttons/${buttonId}`,
-				{
-					method: 'PATCH',
-					accessToken: auth.session.access_token,
-					body: JSON.stringify({ row_index: row, col_index: col })
-				}
-			);
-			buttons = buttons.map((b) => (b.id === data.button.id ? data.button : b));
-		} catch (err) {
-			buttons = buttons.map((b) =>
+		setCurrentBoardButtons(
+			buttons.map((b) =>
 				b.id === buttonId
-					? { ...b, row_index: button.row_index, col_index: button.col_index }
+					? { ...b, row_index: row, col_index: col, updated_at: new Date().toISOString() }
 					: b
-			);
-			error = err instanceof Error ? err.message : 'Failed to move button';
-		}
+			)
+		);
 	}
 
-	async function createButtonAt(row: number, col: number, event?: MouseEvent) {
+	function createButtonAt(row: number, col: number, event?: MouseEvent) {
 		event?.stopPropagation();
-		if (!selectedBoard || didPan || didDrag || drag?.active) return;
-		error = null;
-		try {
-			const data = await apiFetch<{ button: BoardButton }>(
-				`/vocabularies/${vocabularyId}/boards/${selectedBoard.id}/buttons`,
-				{
-					method: 'POST',
-					accessToken: auth.session.access_token,
-					body: JSON.stringify({ row_index: row, col_index: col, label: '' })
-				}
-			);
-			buttons = [...buttons, data.button];
-			selectedButtonId = data.button.id;
-		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to add button';
-		}
+		if (!selectedBoard || !selectedBoardId || didPan || didDrag || drag?.active) return;
+		const id = crypto.randomUUID();
+		const now = new Date().toISOString();
+		const button: BoardButton = {
+			id,
+			board_id: selectedBoardId,
+			row_index: row,
+			col_index: col,
+			label: '',
+			background_color: DEFAULT_BUTTON_COLOR,
+			created_at: now,
+			updated_at: now
+		};
+		setCurrentBoardButtons([...buttons, button]);
+		selectedButtonId = id;
 	}
 
-	async function deleteSelectedButton() {
+	function deleteSelectedButton() {
 		const button = selectedButton;
-		const board = selectedBoard;
-		if (!button || !board || deletingButton) return;
+		if (!button) return;
 
-		if (labelSaveTimer) {
-			clearTimeout(labelSaveTimer);
-			labelSaveTimer = null;
-		}
-
-		deletingButton = true;
-		propsError = null;
-		error = null;
-		const previousButtons = buttons;
-		const previousSelectedId = selectedButtonId;
-
-		buttons = buttons.filter((b) => b.id !== button.id);
+		setCurrentBoardButtons(buttons.filter((b) => b.id !== button.id));
 		selectedButtonId = null;
-
-		try {
-			await apiFetch(
-				`/vocabularies/${vocabularyId}/boards/${board.id}/buttons/${button.id}`,
-				{
-					method: 'DELETE',
-					accessToken: auth.session.access_token
-				}
-			);
-		} catch (err) {
-			buttons = previousButtons;
-			selectedButtonId = previousSelectedId;
-			error = err instanceof Error ? err.message : 'Failed to delete button';
-		} finally {
-			deletingButton = false;
-		}
+		propsError = null;
 	}
 
-	async function saveSelectedLabel(label: string = labelDraft) {
+	function updateSelectedLabel(label: string = labelDraft) {
 		const button = selectedButton;
 		if (!button) return;
 		if (label === button.label) return;
 
-		const buttonId = button.id;
-		const boardId = button.board_id;
-		const previousLabel = button.label;
-		savingProps = true;
-		propsError = null;
-
-		buttons = buttons.map((b) => (b.id === buttonId ? { ...b, label } : b));
-
-		try {
-			const data = await apiFetch<{ button: BoardButton }>(
-				`/vocabularies/${vocabularyId}/boards/${boardId}/buttons/${buttonId}`,
-				{
-					method: 'PATCH',
-					accessToken: auth.session.access_token,
-					body: JSON.stringify({ label })
-				}
-			);
-			// Don't clobber a newer draft the user typed while this request was in flight
-			if (selectedButtonId === buttonId && labelDraft !== label) {
-				buttons = buttons.map((b) =>
-					b.id === buttonId ? { ...b, label: labelDraft } : b
-				);
-			} else {
-				buttons = buttons.map((b) => (b.id === data.button.id ? data.button : b));
-			}
-		} catch (err) {
-			propsError = err instanceof Error ? err.message : 'Failed to save button';
-			buttons = buttons.map((b) =>
-				b.id === buttonId ? { ...b, label: previousLabel } : b
-			);
-			if (selectedButtonId === buttonId && labelDraft === label) {
-				labelDraft = previousLabel;
-			}
-		} finally {
-			savingProps = false;
-			if (selectedButtonId === buttonId && labelDraft !== label && labelDraft !== previousLabel) {
-				queueLabelSave();
-			}
-		}
+		setCurrentBoardButtons(
+			buttons.map((b) =>
+				b.id === button.id ? { ...b, label, updated_at: new Date().toISOString() } : b
+			)
+		);
 	}
 
-	function queueLabelSave() {
-		propsError = null;
-		if (labelSaveTimer) clearTimeout(labelSaveTimer);
-		labelSaveTimer = setTimeout(() => {
-			labelSaveTimer = null;
-			saveSelectedLabel();
-		}, 350);
-	}
-
-	function flushLabelSave() {
-		if (labelSaveTimer) {
-			clearTimeout(labelSaveTimer);
-			labelSaveTimer = null;
-		}
-		saveSelectedLabel();
-	}
-
-	async function saveSelectedColor(color: string = colorDraft) {
+	function updateSelectedColor(color: string = colorDraft) {
 		const button = selectedButton;
 		if (!button) return;
 		const normalized = normalizeHexColor(color);
@@ -633,42 +650,39 @@
 			return;
 		}
 
-		const buttonId = button.id;
-		const boardId = button.board_id;
-		const previousColor = button.background_color;
-		savingProps = true;
 		propsError = null;
 		colorDraft = normalized;
-
-		buttons = buttons.map((b) =>
-			b.id === buttonId ? { ...b, background_color: normalized } : b
+		setCurrentBoardButtons(
+			buttons.map((b) =>
+				b.id === button.id
+					? { ...b, background_color: normalized, updated_at: new Date().toISOString() }
+					: b
+			)
 		);
+	}
 
-		try {
-			const data = await apiFetch<{ button: BoardButton }>(
-				`/vocabularies/${vocabularyId}/boards/${boardId}/buttons/${buttonId}`,
-				{
-					method: 'PATCH',
-					accessToken: auth.session.access_token,
-					body: JSON.stringify({ background_color: normalized })
-				}
-			);
-			buttons = buttons.map((b) => (b.id === data.button.id ? data.button : b));
-			if (selectedButtonId === buttonId) {
-				colorDraft =
-					normalizeHexColor(data.button.background_color) ?? DEFAULT_BUTTON_COLOR;
-			}
-		} catch (err) {
-			propsError = err instanceof Error ? err.message : 'Failed to save color';
-			buttons = buttons.map((b) =>
-				b.id === buttonId ? { ...b, background_color: previousColor } : b
-			);
-			if (selectedButtonId === buttonId) {
-				colorDraft = normalizeHexColor(previousColor) ?? DEFAULT_BUTTON_COLOR;
-			}
-		} finally {
-			savingProps = false;
+	function applyBoardSize() {
+		const board = selectedBoard;
+		if (!board) return;
+
+		const width = Number(widthDraft);
+		const height = Number(heightDraft);
+		if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) {
+			boardSizeError = 'Width and height must be integers ≥ 1.';
+			widthDraft = board.width;
+			heightDraft = board.height;
+			return;
 		}
+
+		if (width === board.width && height === board.height) return;
+
+		boardSizeError = null;
+		const now = new Date().toISOString();
+		boards = boards.map((b) =>
+			b.id === board.id ? { ...b, width, height, updated_at: now } : b
+		);
+		widthDraft = width;
+		heightDraft = height;
 	}
 
 	function buttonDisplayPosition(button: BoardButton) {
@@ -711,6 +725,7 @@
 			event.preventDefault();
 			isPanning = true;
 			didPan = false;
+			panFromBackground = false;
 			panPointerId = event.pointerId;
 			panOrigin = { x: event.clientX, y: event.clientY, panX, panY };
 			(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -728,8 +743,13 @@
 
 	function onCanvasPointerUp(event: PointerEvent) {
 		if (panPointerId !== event.pointerId) return;
+		const shouldClearSelection = panFromBackground && !didPan;
 		isPanning = false;
 		panPointerId = null;
+		panFromBackground = false;
+		if (shouldClearSelection) {
+			selectedButtonId = null;
+		}
 		queueMicrotask(() => {
 			didPan = false;
 		});
@@ -739,13 +759,14 @@
 		if (event.button !== 0 || spaceDown) return;
 		isPanning = true;
 		didPan = false;
+		panFromBackground = true;
 		panPointerId = event.pointerId;
 		panOrigin = { x: event.clientX, y: event.clientY, panX, panY };
 		canvasEl?.setPointerCapture(event.pointerId);
 	}
 </script>
 
-<div class="grid h-full min-h-0 grid-rows-[auto_1fr]">
+<div class="grid h-full min-h-0 grid-rows-[auto_1fr_auto]">
 	<div class="relative z-20 flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
 		{#if loadingBoards}
 			<p class="text-sm text-slate-500">Loading boards…</p>
@@ -885,7 +906,10 @@
 					<div
 						class="pointer-events-auto relative rounded-2xl border border-slate-300 bg-white p-3 shadow-xl"
 						style={`width: ${boardPixelWidth + 24}px; height: ${boardPixelHeight + 24}px;`}
-						onclick={(event) => event.stopPropagation()}
+						onclick={(event) => {
+							event.stopPropagation();
+							clearSelection();
+						}}
 					>
 						<div class="relative" style={`width: ${boardPixelWidth}px; height: ${boardPixelHeight}px;`}>
 							{#each viewportCells as cell (`${cell.row}:${cell.col}`)}
@@ -902,10 +926,15 @@
 										? 'bg-blue-200 ring-2 ring-blue-400'
 										: 'bg-slate-200/90 hover:bg-slate-300'}"
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
-									aria-label={`Add button at row ${cell.row}, column ${cell.col}`}
+									aria-label={`Empty cell at row ${cell.row}, column ${cell.col}`}
 									disabled={Boolean(occupying && !isDragOrigin) || Boolean(drag?.active)}
 									onclick={(event) => {
+										event.stopPropagation();
 										if (occupying && !isDragOrigin) return;
+										if (selectedButtonId) {
+											clearSelection();
+											return;
+										}
 										createButtonAt(cell.row, cell.col, event);
 									}}
 								></button>
@@ -937,7 +966,7 @@
 									onclick={(event) => selectButton(button, event)}
 								>
 									<span class="line-clamp-3 break-words pointer-events-none">
-										{button.label || 'Untitled'}
+										{button.label}
 									</span>
 								</button>
 							{/each}
@@ -952,6 +981,18 @@
 					</div>
 				</div>
 
+				{#if isBoardOffscreen}
+					<div class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+						<button
+							type="button"
+							class="pointer-events-auto rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800"
+							onclick={fitBoardInView}
+						>
+							Re-center board
+						</button>
+					</div>
+				{/if}
+
 				<div
 					class="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-slate-500 shadow-sm"
 				>
@@ -962,7 +1003,9 @@
 			<!-- Properties sidebar -->
 			<aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
 				<div class="border-b border-slate-100 px-4 py-3">
-					<h2 class="text-sm font-semibold text-slate-900">Button</h2>
+					<h2 class="text-sm font-semibold text-slate-900">
+						{selectedButton ? 'Button' : 'Board'}
+					</h2>
 				</div>
 
 				{#if selectedButton}
@@ -970,16 +1013,12 @@
 						<label class="block space-y-1.5">
 							<span class="text-xs font-medium tracking-wide text-slate-500 uppercase">
 								Label
-								{#if savingProps}
-									<span class="font-normal normal-case text-slate-400"> · Saving…</span>
-								{/if}
 							</span>
 							<input
 								class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
 								type="text"
 								bind:value={labelDraft}
-								oninput={queueLabelSave}
-								onblur={flushLabelSave}
+								oninput={() => updateSelectedLabel()}
 							/>
 						</label>
 
@@ -999,7 +1038,7 @@
 										title="{swatch.label} — {swatch.category}"
 										aria-label="{swatch.label}: {swatch.category}"
 										aria-pressed={colorDraft.toLowerCase() === swatch.hex}
-										onclick={() => saveSelectedColor(swatch.hex)}
+										onclick={() => updateSelectedColor(swatch.hex)}
 									></button>
 								{/each}
 							</div>
@@ -1009,7 +1048,7 @@
 									class="h-8 w-10 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
 									type="color"
 									bind:value={colorDraft}
-									oninput={() => saveSelectedColor(colorDraft)}
+									oninput={() => updateSelectedColor(colorDraft)}
 								/>
 								<span class="font-mono text-xs text-slate-500">{colorDraft}</span>
 							</label>
@@ -1022,19 +1061,63 @@
 						<div class="mt-auto border-t border-slate-100 pt-4">
 							<button
 								type="button"
-								class="w-full rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-								disabled={deletingButton}
+								class="w-full rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
 								onclick={deleteSelectedButton}
 							>
-								{deletingButton ? 'Deleting…' : 'Delete button'}
+								Delete button
 							</button>
 						</div>
 					</div>
+				{:else if selectedBoard}
+					<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+						<div class="grid grid-cols-2 gap-3">
+							<label class="block space-y-1.5">
+								<span class="text-xs font-medium tracking-wide text-slate-500 uppercase">
+									Width
+								</span>
+								<input
+									class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+									type="number"
+									min="1"
+									step="1"
+									bind:value={widthDraft}
+									onblur={applyBoardSize}
+									onkeydown={(event) => {
+										if (event.key === 'Enter') {
+											event.preventDefault();
+											(event.currentTarget as HTMLInputElement).blur();
+										}
+									}}
+								/>
+							</label>
+							<label class="block space-y-1.5">
+								<span class="text-xs font-medium tracking-wide text-slate-500 uppercase"
+									>Height</span
+								>
+								<input
+									class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+									type="number"
+									min="1"
+									step="1"
+									bind:value={heightDraft}
+									onblur={applyBoardSize}
+									onkeydown={(event) => {
+										if (event.key === 'Enter') {
+											event.preventDefault();
+											(event.currentTarget as HTMLInputElement).blur();
+										}
+									}}
+								/>
+							</label>
+						</div>
+
+						{#if boardSizeError}
+							<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{boardSizeError}</p>
+						{/if}
+					</div>
 				{:else}
 					<div class="flex flex-1 items-center justify-center p-6">
-						<p class="text-center text-sm text-slate-500">
-							Select a button on the board to edit its properties.
-						</p>
+						<p class="text-center text-sm text-slate-500">Select a board to edit.</p>
 					</div>
 				{/if}
 			</aside>
@@ -1042,6 +1125,43 @@
 	{:else if !loadingBoards}
 		<div class="flex min-h-0 items-center justify-center p-8">
 			<p class="text-sm text-slate-500">Create a board to start editing.</p>
+		</div>
+	{/if}
+
+	{#if isDirty}
+		<div
+			class="sticky bottom-0 z-30 flex flex-wrap items-center justify-between gap-3 border-t border-amber-200 bg-amber-50 px-4 py-3"
+		>
+			<p class="text-sm font-medium text-amber-900">Unsaved changes</p>
+			<div class="flex flex-wrap items-center gap-2">
+				{#if submitError}
+					<p class="text-sm text-red-700">{submitError}</p>
+				{/if}
+				<button
+					type="button"
+					class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={submitting}
+					onclick={discardChanges}
+				>
+					Discard
+				</button>
+				<button
+					type="button"
+					class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={submitting}
+					onclick={() => submitChangeSet('suggested')}
+				>
+					{submitting ? 'Submitting…' : 'Submit as suggestion'}
+				</button>
+				<button
+					type="button"
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={submitting}
+					onclick={() => submitChangeSet('applied')}
+				>
+					{submitting ? 'Submitting…' : 'Submit'}
+				</button>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -1073,10 +1193,9 @@
 		<button
 			type="submit"
 			form="create-board-form"
-			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-			disabled={creating}
+			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
 		>
-			{creating ? 'Creating…' : 'Create'}
+			Create
 		</button>
 	{/snippet}
 </Modal>
@@ -1107,10 +1226,9 @@
 		<button
 			type="submit"
 			form="rename-board-form"
-			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-			disabled={renaming}
+			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
 		>
-			{renaming ? 'Saving…' : 'Save'}
+			Save
 		</button>
 	{/snippet}
 </Modal>
@@ -1129,17 +1247,15 @@
 			type="button"
 			class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
 			onclick={() => (deleteOpen = false)}
-			disabled={deleting}
 		>
 			Cancel
 		</button>
 		<button
 			type="button"
-			class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+			class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
 			onclick={deleteBoard}
-			disabled={deleting}
 		>
-			{deleting ? 'Deleting…' : 'Delete'}
+			Delete
 		</button>
 	{/snippet}
 </Modal>

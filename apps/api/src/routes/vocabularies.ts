@@ -42,8 +42,19 @@ type ManagerRow = {
   profiles: ManagerProfile | ManagerProfile[] | null;
 };
 
-const DEFAULT_BOARD_WIDTH = 4;
-const DEFAULT_BOARD_HEIGHT = 4;
+type ChangeSet = {
+  id: string;
+  vocabulary_id: string;
+  author_id: string;
+  status: "applied" | "suggested";
+  mutations: unknown;
+  applied_seq: number | null;
+  applied_at: string | null;
+  created_at: string;
+};
+
+const CHANGE_SET_ONLY_MESSAGE =
+  "Boards and buttons can only be changed by submitting a Change Set";
 
 function displayName(name: string | null | undefined) {
   return name && name.trim() ? name : "Untitled";
@@ -55,19 +66,6 @@ function withDisplayName<T extends { name: string }>(row: T) {
 
 function pgErrorMessage(error: { message: string } | null) {
   return error?.message ?? "Request failed";
-}
-
-function parsePositiveInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 1) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed >= 1) {
-      return parsed;
-    }
-  }
-  return null;
 }
 
 export const vocabularyRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -92,7 +90,7 @@ vocabularyRoutes.get("/", async (c) => {
 
 vocabularyRoutes.post("/", async (c) => {
   const supabase = c.get("supabase");
-  const body = await c.req.json<{ name?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ name?: string }>().catch((): { name?: string } => ({}));
   const name = typeof body.name === "string" ? body.name : "";
 
   const { data, error } = await supabase.rpc("create_vocabulary", {
@@ -137,7 +135,7 @@ vocabularyRoutes.get("/:id", async (c) => {
 vocabularyRoutes.patch("/:id", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const body = await c.req.json<{ name?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ name?: string }>().catch((): { name?: string } => ({}));
 
   if (typeof body.name !== "string") {
     return c.json({ error: "name is required" }, 400);
@@ -204,106 +202,17 @@ vocabularyRoutes.get("/:id/boards", async (c) => {
   });
 });
 
-vocabularyRoutes.post("/:id/boards", async (c) => {
-  const supabase = c.get("supabase");
-  const id = c.req.param("id");
-  const body = await c
-    .req.json<{ name?: string; width?: number; height?: number }>()
-    .catch(() => ({}));
-  const name = typeof body.name === "string" ? body.name : "";
+vocabularyRoutes.post("/:id/boards", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
 
-  let width = DEFAULT_BOARD_WIDTH;
-  if (body.width !== undefined) {
-    const parsed = parsePositiveInt(body.width);
-    if (parsed === null) {
-      return c.json({ error: "width must be an integer ≥ 1" }, 400);
-    }
-    width = parsed;
-  }
+vocabularyRoutes.patch("/:id/boards/:boardId", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
 
-  let height = DEFAULT_BOARD_HEIGHT;
-  if (body.height !== undefined) {
-    const parsed = parsePositiveInt(body.height);
-    if (parsed === null) {
-      return c.json({ error: "height must be an integer ≥ 1" }, 400);
-    }
-    height = parsed;
-  }
-
-  const { data, error } = await supabase
-    .from("boards")
-    .insert({
-      vocabulary_id: id,
-      name,
-      width,
-      height,
-    })
-    .select("id, vocabulary_id, name, width, height, created_at, updated_at")
-    .maybeSingle();
-
-  if (error) {
-    return c.json({ error: pgErrorMessage(error) }, 400);
-  }
-
-  if (!data) {
-    return c.json({ error: "Vocabulary not found" }, 404);
-  }
-
-  return c.json({ board: withDisplayName(data as Board) }, 201);
-});
-
-vocabularyRoutes.patch("/:id/boards/:boardId", async (c) => {
-  const supabase = c.get("supabase");
-  const id = c.req.param("id");
-  const boardId = c.req.param("boardId");
-  const body = await c.req.json<{ name?: string }>().catch(() => ({}));
-
-  if (typeof body.name !== "string") {
-    return c.json({ error: "name is required" }, 400);
-  }
-
-  const { data, error } = await supabase
-    .from("boards")
-    .update({ name: body.name })
-    .eq("id", boardId)
-    .eq("vocabulary_id", id)
-    .select("id, vocabulary_id, name, width, height, created_at, updated_at")
-    .maybeSingle();
-
-  if (error) {
-    return c.json({ error: pgErrorMessage(error) }, 400);
-  }
-
-  if (!data) {
-    return c.json({ error: "Board not found" }, 404);
-  }
-
-  return c.json({ board: withDisplayName(data as Board) });
-});
-
-vocabularyRoutes.delete("/:id/boards/:boardId", async (c) => {
-  const supabase = c.get("supabase");
-  const id = c.req.param("id");
-  const boardId = c.req.param("boardId");
-
-  const { data, error } = await supabase
-    .from("boards")
-    .delete()
-    .eq("id", boardId)
-    .eq("vocabulary_id", id)
-    .select("id")
-    .maybeSingle();
-
-  if (error) {
-    return c.json({ error: pgErrorMessage(error) }, 400);
-  }
-
-  if (!data) {
-    return c.json({ error: "Board not found" }, 404);
-  }
-
-  return c.json({ ok: true });
-});
+vocabularyRoutes.delete("/:id/boards/:boardId", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
 
 vocabularyRoutes.get("/:id/boards/:boardId/buttons", async (c) => {
   const supabase = c.get("supabase");
@@ -338,205 +247,99 @@ vocabularyRoutes.get("/:id/boards/:boardId/buttons", async (c) => {
   return c.json({ buttons: data as Button[] });
 });
 
-vocabularyRoutes.post("/:id/boards/:boardId/buttons", async (c) => {
+vocabularyRoutes.post("/:id/boards/:boardId/buttons", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
+
+vocabularyRoutes.patch("/:id/boards/:boardId/buttons/:buttonId", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
+
+vocabularyRoutes.delete("/:id/boards/:boardId/buttons/:buttonId", (c) =>
+  c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
+);
+
+vocabularyRoutes.get("/:id/change-sets", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const boardId = c.req.param("boardId");
-  const body = await c
-    .req.json<{
-      row_index?: number;
-      col_index?: number;
-      label?: string;
-      background_color?: string;
-    }>()
-    .catch(() => ({}));
+  const status = c.req.query("status");
 
-  const row =
-    typeof body.row_index === "number" && Number.isInteger(body.row_index)
-      ? body.row_index
-      : null;
-  const col =
-    typeof body.col_index === "number" && Number.isInteger(body.col_index)
-      ? body.col_index
-      : null;
-
-  if (row === null || row < 0) {
-    return c.json({ error: "row_index must be an integer ≥ 0" }, 400);
-  }
-  if (col === null || col < 0) {
-    return c.json({ error: "col_index must be an integer ≥ 0" }, 400);
-  }
-
-  const label = typeof body.label === "string" ? body.label : "";
-  let backgroundColor = "#ffffff";
-  if (body.background_color !== undefined) {
-    if (
-      typeof body.background_color !== "string" ||
-      !/^#[0-9A-Fa-f]{6}$/.test(body.background_color)
-    ) {
-      return c.json({ error: "background_color must be a hex color like #RRGGBB" }, 400);
-    }
-    backgroundColor = body.background_color.toLowerCase();
-  }
-
-  const { data: board, error: boardError } = await supabase
-    .from("boards")
-    .select("id")
-    .eq("id", boardId)
-    .eq("vocabulary_id", id)
-    .maybeSingle();
-
-  if (boardError) {
-    return c.json({ error: pgErrorMessage(boardError) }, 400);
-  }
-
-  if (!board) {
-    return c.json({ error: "Board not found" }, 404);
-  }
-
-  const { data, error } = await supabase
-    .from("buttons")
-    .insert({
-      board_id: boardId,
-      row_index: row,
-      col_index: col,
-      label,
-      background_color: backgroundColor,
-    })
+  let query = supabase
+    .from("change_sets")
     .select(
-      "id, board_id, row_index, col_index, label, background_color, created_at, updated_at",
+      "id, vocabulary_id, author_id, status, mutations, applied_seq, applied_at, created_at",
     )
-    .maybeSingle();
+    .eq("vocabulary_id", id)
+    .order("created_at", { ascending: true });
+
+  if (status === "applied" || status === "suggested") {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
-  if (!data) {
-    return c.json({ error: "Failed to create button" }, 400);
-  }
-
-  return c.json({ button: data as Button }, 201);
+  return c.json({ changeSets: data as ChangeSet[] });
 });
 
-vocabularyRoutes.patch("/:id/boards/:boardId/buttons/:buttonId", async (c) => {
+vocabularyRoutes.post("/:id/change-sets", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const boardId = c.req.param("boardId");
-  const buttonId = c.req.param("buttonId");
   const body = await c
-    .req.json<{
-      label?: string;
-      row_index?: number;
-      col_index?: number;
-      background_color?: string;
-    }>()
-    .catch(() => ({}));
+    .req.json<{ status?: string; mutations?: unknown }>()
+    .catch((): { status?: string; mutations?: unknown } => ({}));
 
-  const updates: {
-    label?: string;
-    row_index?: number;
-    col_index?: number;
-    background_color?: string;
-  } = {};
-
-  if (body.label !== undefined) {
-    if (typeof body.label !== "string") {
-      return c.json({ error: "label must be a string" }, 400);
-    }
-    updates.label = body.label;
+  const status = body.status;
+  if (status !== "applied" && status !== "suggested") {
+    return c.json({ error: "status must be applied or suggested" }, 400);
   }
 
-  if (body.row_index !== undefined) {
-    if (typeof body.row_index !== "number" || !Number.isInteger(body.row_index)) {
-      return c.json({ error: "row_index must be an integer" }, 400);
-    }
-    updates.row_index = body.row_index;
+  if (!Array.isArray(body.mutations)) {
+    return c.json({ error: "mutations must be an array" }, 400);
   }
 
-  if (body.col_index !== undefined) {
-    if (typeof body.col_index !== "number" || !Number.isInteger(body.col_index)) {
-      return c.json({ error: "col_index must be an integer" }, 400);
-    }
-    updates.col_index = body.col_index;
-  }
-
-  if (body.background_color !== undefined) {
-    if (
-      typeof body.background_color !== "string" ||
-      !/^#[0-9A-Fa-f]{6}$/.test(body.background_color)
-    ) {
-      return c.json({ error: "background_color must be a hex color like #RRGGBB" }, 400);
-    }
-    updates.background_color = body.background_color.toLowerCase();
-  }
-
-  if (Object.keys(updates).length === 0) {
-    return c.json({ error: "No updates provided" }, 400);
-  }
-
-  const { data: board, error: boardError } = await supabase
-    .from("boards")
-    .select("id")
-    .eq("id", boardId)
-    .eq("vocabulary_id", id)
-    .maybeSingle();
-
-  if (boardError) {
-    return c.json({ error: pgErrorMessage(boardError) }, 400);
-  }
-
-  if (!board) {
-    return c.json({ error: "Board not found" }, 404);
-  }
-
-  const { data, error } = await supabase
-    .from("buttons")
-    .update(updates)
-    .eq("id", buttonId)
-    .eq("board_id", boardId)
-    .select(
-      "id, board_id, row_index, col_index, label, background_color, created_at, updated_at",
-    )
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("submit_change_set", {
+    p_vocabulary_id: id,
+    p_status: status,
+    p_mutations: body.mutations,
+  });
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
-  if (!data) {
-    return c.json({ error: "Button not found" }, 404);
-  }
-
-  return c.json({ button: data as Button });
+  return c.json({ changeSet: data as ChangeSet }, 201);
 });
 
-vocabularyRoutes.delete("/:id/boards/:boardId/buttons/:buttonId", async (c) => {
+vocabularyRoutes.post("/:id/change-sets/:changeSetId/apply", async (c) => {
+  const supabase = c.get("supabase");
+  const changeSetId = c.req.param("changeSetId");
+
+  const { data, error } = await supabase.rpc("apply_suggested_change_set", {
+    p_change_set_id: changeSetId,
+  });
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  return c.json({ changeSet: data as ChangeSet });
+});
+
+vocabularyRoutes.delete("/:id/change-sets/:changeSetId", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const boardId = c.req.param("boardId");
-  const buttonId = c.req.param("buttonId");
-
-  const { data: board, error: boardError } = await supabase
-    .from("boards")
-    .select("id")
-    .eq("id", boardId)
-    .eq("vocabulary_id", id)
-    .maybeSingle();
-
-  if (boardError) {
-    return c.json({ error: pgErrorMessage(boardError) }, 400);
-  }
-
-  if (!board) {
-    return c.json({ error: "Board not found" }, 404);
-  }
+  const changeSetId = c.req.param("changeSetId");
 
   const { data, error } = await supabase
-    .from("buttons")
+    .from("change_sets")
     .delete()
-    .eq("id", buttonId)
-    .eq("board_id", boardId)
+    .eq("id", changeSetId)
+    .eq("vocabulary_id", id)
+    .eq("status", "suggested")
     .select("id")
     .maybeSingle();
 
@@ -545,7 +348,7 @@ vocabularyRoutes.delete("/:id/boards/:boardId/buttons/:buttonId", async (c) => {
   }
 
   if (!data) {
-    return c.json({ error: "Button not found" }, 404);
+    return c.json({ error: "Suggested Change Set not found" }, 404);
   }
 
   return c.json({ ok: true });
@@ -581,7 +384,7 @@ vocabularyRoutes.get("/:id/managers", async (c) => {
 vocabularyRoutes.post("/:id/managers", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const body = await c.req.json<{ email?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ email?: string }>().catch((): { email?: string } => ({}));
   const email = body.email?.trim();
 
   if (!email) {

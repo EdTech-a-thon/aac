@@ -9,7 +9,7 @@ A person with an Auth account (email/password). Not split into separate account 
 _Avoid_: Manager account, AAC User account, role-as-account-type
 
 **Vocabulary**:
-A curated collection of Boards that Users can manage and/or use, via separate relationships. Has a name, which may be blank (shown as an Untitled placeholder in the UI). Board order and which Board is entered first are unspecified for now. Deleting a Vocabulary removes its Boards, Buttons, and Management/Usage relationships with it.
+A curated collection of Boards that Users can manage and/or use, via separate relationships. Has a name, which may be blank (shown as an Untitled placeholder in the UI). Board order and which Board is entered first are unspecified for now. Deleting a Vocabulary removes its Boards, Buttons, Change Sets, and Management/Usage relationships with it.
 _Avoid_: Page set, word list
 
 **Board**:
@@ -31,3 +31,7 @@ _Avoid_: Assignment, subscription
 **Manager** (role via relationship):
 A User acting through a Management relationship to a Vocabulary — not a separate kind of account. Managing a Vocabulary means managing all of its Boards.
 _Avoid_: Caregiver, clinician, admin (as account types), editor, board editor, board manager, vocabulary editor
+
+**Change Set**:
+A submitted collection of mutations to a Vocabulary's Boards and/or Buttons. Belongs to exactly one Vocabulary; it does not outlive that Vocabulary. Has an author: the User who submitted it. Only a Manager of that Vocabulary may submit a Change Set, as Applied or as Suggested — non-Managers cannot submit Change Sets. Does not include Vocabulary name changes or Management/Usage relationship changes — those stay outside Change Sets. Each Change Set has a status: **Applied** (its mutations are part of the live Vocabulary) or **Suggested** (saved, not yet applied). Applying a Change Set is the only durable way Boards or Buttons are created, updated, or deleted. Submitting as Applied applies immediately and appends that Change Set to the Vocabulary's Applied history. Applying a Suggested Change Set flips that same Change Set to Applied and appends it as the new tip of the Applied history; any Manager of that Vocabulary may apply it. Any Manager may delete a Suggested Change Set without applying it. Applied Change Sets for a Vocabulary form an ordered, permanent history (for the life of the Vocabulary); the live Vocabulary is always reconstructable from that sequence. Suggested Change Sets are not part of that permanent history — they may be updated or deleted when an Applied Change Set lands and they are no longer meaningful (including deletion when nothing in them would do anything anymore). The exact update rules for Suggested Change Sets are unspecified for now. Suggested Change Sets are not tied to a specific point in the Applied history. “Suggestion” means a Change Set with Suggested status — not a separate concept.
+_Avoid_: Draft, draft vocabulary, batch, pending edits, working copy, autosave buffer, Suggestion (as a separate noun)

@@ -1,0 +1,3 @@
+# Boards and Buttons mutate only via Applied Change Sets
+
+We need Managers to stage many board/button edits locally, submit them as one unit, and keep a reconstructable history for later time-travel/undo — without building share modes yet. Boards and Buttons therefore change only by applying a Change Set: submit-as-Applied appends to an ordered permanent history for that Vocabulary; Suggested Change Sets are the same concept left unapplied until a Manager applies or deletes them. Direct per-field CRUD on Boards/Buttons is rejected because it cannot reconstruct history or prepare for confirmable Suggestions.
