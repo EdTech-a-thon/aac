@@ -33,6 +33,7 @@ yarn-error.*
 .env.*
 !.env.example
 !.env.test
+!.env.template
 .env*.local
 
 # typescript
