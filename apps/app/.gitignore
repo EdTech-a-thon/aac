@@ -31,6 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
+!.env.test
+!.env.template
 .env*.local
 
 # typescript
