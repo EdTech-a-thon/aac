@@ -1,14 +1,13 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getCorsOrigins } from "./corsOrigins.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { vocabularyRoutes } from "./routes/vocabularies.ts";
 
 const app = new Hono();
 
-const corsOrigins = (process.env.CORS_ORIGINS ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const corsOrigins = getCorsOrigins();
 
 app.use(
   "*",
@@ -18,6 +17,7 @@ app.use(
 );
 
 app.route("/auth", authRoutes);
+app.route("/vocabularies", vocabularyRoutes);
 
 app.get("/", (c) => c.text(String(Math.floor(Math.random() * 1_000_000))));
 

@@ -1,29 +1,76 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { Hono } from "hono";
+import { isAllowedRedirectUrl } from "../corsOrigins.ts";
 import { createSupabaseClient } from "../supabase.ts";
 
 type AuthBody = {
   email?: string;
   password?: string;
+  name?: string;
+  emailRedirectTo?: string;
 };
 
-function parseAuthBody(body: AuthBody) {
+type AuthCredentials =
+  | { error: string }
+  | { email: string; password: string };
+
+type RegisterCredentials =
+  | { error: string }
+  | { email: string; password: string; name: string; emailRedirectTo: string };
+
+function parseCredentials(body: AuthBody): AuthCredentials {
   const email = body.email?.trim();
   const password = body.password;
 
   if (!email || !password) {
-    return { error: "Email and password are required" } as const;
+    return { error: "Email and password are required" };
   }
 
-  return { email, password } as const;
+  return { email, password };
+}
+
+function parseRegisterBody(body: AuthBody): RegisterCredentials {
+  const credentials = parseCredentials(body);
+  if ("error" in credentials) {
+    return credentials;
+  }
+
+  const name = body.name?.trim();
+  if (!name) {
+    return { error: "Name is required" };
+  }
+
+  const emailRedirectTo = body.emailRedirectTo?.trim();
+  if (!emailRedirectTo) {
+    return { error: "emailRedirectTo is required" };
+  }
+
+  if (!isAllowedRedirectUrl(emailRedirectTo)) {
+    return { error: "emailRedirectTo is not an allowed origin" };
+  }
+
+  return {
+    email: credentials.email,
+    password: credentials.password,
+    name,
+    emailRedirectTo,
+  };
+}
+
+function authUser(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    name:
+      typeof user.user_metadata?.name === "string"
+        ? user.user_metadata.name
+        : null,
+  };
 }
 
 function authResponse(session: Session, user: User) {
   return {
-    user: {
-      id: user.id,
-      email: user.email,
-    },
+    user: authUser(user),
     session: {
       access_token: session.access_token,
       refresh_token: session.refresh_token,
@@ -36,7 +83,7 @@ export const authRoutes = new Hono();
 
 authRoutes.post("/register", async (c) => {
   const body = await c.req.json<AuthBody>();
-  const parsed = parseAuthBody(body);
+  const parsed = parseRegisterBody(body);
 
   if ("error" in parsed) {
     return c.json({ error: parsed.error }, 400);
@@ -46,6 +93,12 @@ authRoutes.post("/register", async (c) => {
   const { data, error } = await supabase.auth.signUp({
     email: parsed.email,
     password: parsed.password,
+    options: {
+      data: {
+        name: parsed.name,
+      },
+      emailRedirectTo: parsed.emailRedirectTo,
+    },
   });
 
   if (error) {
@@ -62,10 +115,7 @@ authRoutes.post("/register", async (c) => {
   if (!data.session) {
     return c.json(
       {
-        user: {
-          id: data.user.id,
-          email: data.user.email,
-        },
+        user: authUser(data.user),
         message: "Check your email to confirm your account before signing in.",
       },
       201,
@@ -77,7 +127,7 @@ authRoutes.post("/register", async (c) => {
 
 authRoutes.post("/login", async (c) => {
   const body = await c.req.json<AuthBody>();
-  const parsed = parseAuthBody(body);
+  const parsed = parseCredentials(body);
 
   if ("error" in parsed) {
     return c.json({ error: parsed.error }, 400);
