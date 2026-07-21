@@ -3,7 +3,7 @@
 create table public.change_sets (
   id uuid primary key default gen_random_uuid(),
   vocabulary_id uuid not null references public.vocabularies (id) on delete cascade,
-  author_id uuid not null references auth.users (id) on delete cascade,
+  author_id uuid references auth.users (id) on delete set null,
   status text not null check (status in ('applied', 'suggested')),
   mutations jsonb not null default '[]'::jsonb,
   applied_seq bigint,

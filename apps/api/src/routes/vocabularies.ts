@@ -45,7 +45,7 @@ type ManagerRow = {
 type ChangeSet = {
   id: string;
   vocabulary_id: string;
-  author_id: string;
+  author_id: string | null;
   status: "applied" | "suggested";
   mutations: unknown;
   applied_seq: number | null;
@@ -269,11 +269,17 @@ vocabularyRoutes.get("/:id/change-sets", async (c) => {
     .select(
       "id, vocabulary_id, author_id, status, mutations, applied_seq, applied_at, created_at",
     )
-    .eq("vocabulary_id", id)
-    .order("created_at", { ascending: true });
+    .eq("vocabulary_id", id);
 
-  if (status === "applied" || status === "suggested") {
-    query = query.eq("status", status);
+  if (status === "applied") {
+    query = query.eq("status", "applied").order("applied_seq", { ascending: true });
+  } else if (status === "suggested") {
+    query = query.eq("status", "suggested").order("created_at", { ascending: true });
+  } else {
+    query = query
+      .order("status", { ascending: true })
+      .order("applied_seq", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
   }
 
   const { data, error } = await query;

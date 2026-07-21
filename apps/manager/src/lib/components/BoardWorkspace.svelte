@@ -16,6 +16,14 @@
 	} from '$lib/fitzgeraldColors';
 	import type { Board, BoardButton } from '$lib/types';
 
+	type SuggestedChangeSet = {
+		id: string;
+		status: 'suggested';
+		mutations: unknown[];
+		created_at: string;
+		author_id: string | null;
+	};
+
 	let {
 		vocabularyId,
 		auth
@@ -33,6 +41,7 @@
 	let buttonsByBoardId = $state<Record<string, BoardButton[]>>({});
 	let baseBoards = $state<Board[]>([]);
 	let baseButtonsByBoardId = $state<Record<string, BoardButton[]>>({});
+	let suggestedChangeSets = $state<SuggestedChangeSet[]>([]);
 	let selectedBoardId = $state<string | null>(null);
 	let selectedButtonId = $state<string | null>(null);
 	let loadingBoards = $state(true);
@@ -40,6 +49,7 @@
 	let error = $state<string | null>(null);
 	let submitError = $state<string | null>(null);
 	let submitting = $state(false);
+	let suggestionActionId = $state<string | null>(null);
 
 	let createOpen = $state(false);
 	let newBoardName = $state('');
@@ -183,6 +193,37 @@
 		baseButtonsByBoardId = structuredClone(buttonsByBoardId);
 	}
 
+	async function reloadSuggestedChangeSets() {
+		const data = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
+			`/vocabularies/${vocabularyId}/change-sets?status=suggested`,
+			{ accessToken: auth.session.access_token }
+		);
+		suggestedChangeSets = data.changeSets;
+	}
+
+	async function reloadLiveBoardsAndButtons() {
+		const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${vocabularyId}/boards`, {
+			accessToken: auth.session.access_token
+		});
+		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
+		await Promise.all(
+			data.boards.map(async (board) => {
+				const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
+					`/vocabularies/${vocabularyId}/boards/${board.id}/buttons`,
+					{ accessToken: auth.session.access_token }
+				);
+				nextButtonsByBoardId[board.id] = buttonData.buttons;
+			})
+		);
+		boards = data.boards;
+		buttonsByBoardId = nextButtonsByBoardId;
+		setBaseFromCurrent();
+		if (!selectedBoardId || !data.boards.some((board) => board.id === selectedBoardId)) {
+			selectedBoardId = data.boards[0]?.id ?? null;
+		}
+		selectedButtonId = null;
+	}
+
 	function setCurrentBoardButtons(next: BoardButton[]) {
 		if (!selectedBoardId) return;
 		buttonsByBoardId = { ...buttonsByBoardId, [selectedBoardId]: next };
@@ -255,6 +296,15 @@
 				boards = data.boards;
 				buttonsByBoardId = nextButtonsByBoardId;
 				setBaseFromCurrent();
+				try {
+					const suggested = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
+						`/vocabularies/${id}/change-sets?status=suggested`,
+						{ accessToken: token }
+					);
+					if (!cancelled) suggestedChangeSets = suggested.changeSets;
+				} catch {
+					if (!cancelled) suggestedChangeSets = [];
+				}
 
 				if (data.boards.length === 0) {
 					selectedBoardId = null;
@@ -471,7 +521,13 @@
 				accessToken: auth.session.access_token,
 				body: JSON.stringify({ status, mutations: pendingMutations })
 			});
-			setBaseFromCurrent();
+			if (status === 'applied') {
+				setBaseFromCurrent();
+			} else {
+				// Suggested leaves live Vocabulary unchanged — reset editor to live base.
+				discardChanges();
+				await reloadSuggestedChangeSets();
+			}
 		} catch (err) {
 			submitError = err instanceof Error ? err.message : 'Failed to submit changes';
 		} finally {
@@ -489,6 +545,41 @@
 		submitError = null;
 		propsError = null;
 		boardSizeError = null;
+	}
+
+	async function applySuggestedChangeSet(changeSetId: string) {
+		if (suggestionActionId || isDirty) return;
+		suggestionActionId = changeSetId;
+		submitError = null;
+		try {
+			await apiFetch(`/vocabularies/${vocabularyId}/change-sets/${changeSetId}/apply`, {
+				method: 'POST',
+				accessToken: auth.session.access_token
+			});
+			await reloadLiveBoardsAndButtons();
+			await reloadSuggestedChangeSets();
+		} catch (err) {
+			submitError = err instanceof Error ? err.message : 'Failed to apply suggestion';
+		} finally {
+			suggestionActionId = null;
+		}
+	}
+
+	async function deleteSuggestedChangeSet(changeSetId: string) {
+		if (suggestionActionId) return;
+		suggestionActionId = changeSetId;
+		submitError = null;
+		try {
+			await apiFetch(`/vocabularies/${vocabularyId}/change-sets/${changeSetId}`, {
+				method: 'DELETE',
+				accessToken: auth.session.access_token
+			});
+			await reloadSuggestedChangeSets();
+		} catch (err) {
+			submitError = err instanceof Error ? err.message : 'Failed to delete suggestion';
+		} finally {
+			suggestionActionId = null;
+		}
 	}
 
 	function selectButton(button: BoardButton, event?: MouseEvent) {
@@ -1125,6 +1216,48 @@
 	{:else if !loadingBoards}
 		<div class="flex min-h-0 items-center justify-center p-8">
 			<p class="text-sm text-slate-500">Create a board to start editing.</p>
+		</div>
+	{/if}
+
+	{#if suggestedChangeSets.length > 0}
+		<div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
+			<p class="mb-2 text-sm font-medium text-slate-800">Suggested Change Sets</p>
+			<ul class="space-y-2">
+				{#each suggestedChangeSets as changeSet (changeSet.id)}
+					<li
+						class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+					>
+						<p class="text-sm text-slate-600">
+							{changeSet.mutations.length}
+							{changeSet.mutations.length === 1 ? 'mutation' : 'mutations'}
+						</p>
+						<div class="flex items-center gap-2">
+							<button
+								type="button"
+								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={suggestionActionId !== null || isDirty}
+								onclick={() => deleteSuggestedChangeSet(changeSet.id)}
+							>
+								{suggestionActionId === changeSet.id ? 'Working…' : 'Delete'}
+							</button>
+							<button
+								type="button"
+								class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={suggestionActionId !== null || isDirty}
+								onclick={() => applySuggestedChangeSet(changeSet.id)}
+							>
+								{suggestionActionId === changeSet.id ? 'Working…' : 'Apply'}
+							</button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+			{#if isDirty}
+				<p class="mt-2 text-xs text-slate-500">Submit or discard unsaved changes before applying a suggestion.</p>
+			{/if}
+			{#if submitError && !isDirty}
+				<p class="mt-2 text-sm text-red-700">{submitError}</p>
+			{/if}
 		</div>
 	{/if}
 

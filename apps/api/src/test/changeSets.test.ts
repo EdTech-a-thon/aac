@@ -196,13 +196,13 @@ describe("Change Sets HTTP API", () => {
     expect(listed.body.changeSets).toEqual([]);
   });
 
-  it("non-Manager cannot submit a Change Set", async () => {
+  it("non-Manager cannot submit, apply, or delete a Change Set", async () => {
     const app = testApp();
     const manager = await createTestUser();
     const outsider = await createTestUser();
     const vocabulary = await createManagedVocabulary(app, manager.accessToken);
 
-    const submitted = await apiJson<{ error: string }>(
+    const submitted = await apiJson<{ changeSet: ChangeSet; error?: string }>(
       app,
       `/vocabularies/${vocabulary.id}/change-sets`,
       {
@@ -223,6 +223,61 @@ describe("Change Sets HTTP API", () => {
       },
     );
     expect(submitted.status).toBe(400);
+
+    const suggested = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "suggested",
+          mutations: [
+            {
+              op: "create_board",
+              id: randomUUID(),
+              name: "Pending",
+              width: 1,
+              height: 1,
+            },
+          ],
+        },
+      },
+    );
+    expect(suggested.status).toBe(201);
+
+    const apply = await apiJson<{ error: string }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets/${suggested.body.changeSet.id}/apply`,
+      { method: "POST", accessToken: outsider.accessToken },
+    );
+    expect(apply.status).toBe(400);
+
+    const del = await apiJson<{ error?: string; ok?: boolean }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets/${suggested.body.changeSet.id}`,
+      { method: "DELETE", accessToken: outsider.accessToken },
+    );
+    expect(del.status).toBe(404);
+  });
+
+  it("managers can still be added without Change Sets", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const peer = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+
+    const added = await apiJson<{ managers: { userId: string }[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/managers`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: { email: peer.email },
+      },
+    );
+    expect(added.status).toBe(201);
+    expect(added.body.managers.some((m) => m.userId === peer.userId)).toBe(true);
   });
 
   it("direct board and button writes are rejected", async () => {
