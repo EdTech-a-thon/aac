@@ -5,13 +5,13 @@
 		discardEditorChanges,
 		getVocabularyEditorSession,
 		isEditorDirty,
-		pendingBoardButtonMutations,
+		pendingEditorMutations,
 		persistEditorSession,
 		replaceEditorLiveFromServer,
 		subscribeEditorRevision,
 		type SuggestedChangeSet
 	} from '$lib/vocabularyEditorSession';
-	import type { Board, BoardButton } from '$lib/types';
+	import type { Board, BoardButton, PaletteColor } from '$lib/types';
 
 	let {
 		vocabularyId,
@@ -49,12 +49,18 @@
 	}
 
 	async function reloadLiveBoardsAndButtons() {
-		const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${vocabularyId}/boards`, {
-			accessToken: auth.session.access_token
-		});
+		const [boardData, paletteData] = await Promise.all([
+			apiFetch<{ boards: Board[] }>(`/vocabularies/${vocabularyId}/boards`, {
+				accessToken: auth.session.access_token
+			}),
+			apiFetch<{ paletteColors: PaletteColor[] }>(
+				`/vocabularies/${vocabularyId}/palette-colors`,
+				{ accessToken: auth.session.access_token }
+			)
+		]);
 		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
 		await Promise.all(
-			data.boards.map(async (board) => {
+			boardData.boards.map(async (board) => {
 				const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
 					`/vocabularies/${vocabularyId}/boards/${board.id}/buttons`,
 					{ accessToken: auth.session.access_token }
@@ -62,11 +68,16 @@
 				nextButtonsByBoardId[board.id] = buttonData.buttons;
 			})
 		);
-		replaceEditorLiveFromServer(session, data.boards, nextButtonsByBoardId);
+		replaceEditorLiveFromServer(
+			session,
+			boardData.boards,
+			nextButtonsByBoardId,
+			paletteData.paletteColors
+		);
 	}
 
 	async function submitChangeSet(status: 'applied' | 'suggested') {
-		const mutations = pendingBoardButtonMutations(session);
+		const mutations = pendingEditorMutations(session);
 		if (submitting || mutations.length === 0) return;
 		submitting = true;
 		submitError = null;

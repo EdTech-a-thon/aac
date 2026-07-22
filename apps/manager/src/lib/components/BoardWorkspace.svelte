@@ -268,9 +268,15 @@
 			loadingBoards = true;
 			loadingButtons = true;
 			try {
-				const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
-					accessToken: token
-				});
+				const [data, paletteData] = await Promise.all([
+					apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
+						accessToken: token
+					}),
+					apiFetch<{ paletteColors: import('$lib/types').PaletteColor[] }>(
+						`/vocabularies/${id}/palette-colors`,
+						{ accessToken: token }
+					)
+				]);
 				if (cancelled) return;
 
 				const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
@@ -287,7 +293,12 @@
 				);
 				if (cancelled) return;
 
-				replaceEditorLiveFromServer(current, data.boards, nextButtonsByBoardId);
+				replaceEditorLiveFromServer(
+					current,
+					data.boards,
+					nextButtonsByBoardId,
+					paletteData.paletteColors
+				);
 				await refreshSuggested();
 			} catch (err) {
 				if (cancelled) return;

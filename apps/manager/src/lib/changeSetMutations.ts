@@ -17,6 +17,14 @@ export type ButtonSnapshot = {
 	action: ButtonAction | null;
 };
 
+export type PaletteColorSnapshot = {
+	id: string;
+	hex: string;
+	name: string;
+	description: string;
+	position: number;
+};
+
 export type ChangeSetMutation =
 	| {
 			op: 'create_board';
@@ -53,7 +61,24 @@ export type ChangeSetMutation =
 			background_color?: string;
 			action?: ButtonAction | null;
 	  }
-	| { op: 'delete_button'; id: string };
+	| { op: 'delete_button'; id: string }
+	| {
+			op: 'create_palette_color';
+			id: string;
+			hex: string;
+			name: string;
+			description: string;
+			position: number;
+	  }
+	| {
+			op: 'update_palette_color';
+			id: string;
+			hex?: string;
+			name?: string;
+			description?: string;
+			position?: number;
+	  }
+	| { op: 'delete_palette_color'; id: string };
 
 function boardKey(board: BoardSnapshot) {
 	return `${board.name}\0${board.width}\0${board.height}`;
@@ -148,6 +173,52 @@ export function diffBoardButtonMutations(
 				continue;
 			}
 			mutations.push({ op: 'delete_button', id: button.id });
+		}
+	}
+
+	return mutations;
+}
+
+function paletteKey(color: PaletteColorSnapshot) {
+	return `${color.hex}\0${color.name}\0${color.description}\0${color.position}`;
+}
+
+/** Diff last-synced Palette against current local editor state. */
+export function diffPaletteMutations(
+	baseColors: PaletteColorSnapshot[],
+	currentColors: PaletteColorSnapshot[]
+): ChangeSetMutation[] {
+	const mutations: ChangeSetMutation[] = [];
+	const baseMap = new Map(baseColors.map((c) => [c.id, c]));
+	const currentMap = new Map(currentColors.map((c) => [c.id, c]));
+
+	for (const color of currentColors) {
+		const base = baseMap.get(color.id);
+		if (!base) {
+			mutations.push({
+				op: 'create_palette_color',
+				id: color.id,
+				hex: color.hex,
+				name: color.name,
+				description: color.description,
+				position: color.position
+			});
+		} else if (paletteKey(base) !== paletteKey(color)) {
+			const update: Extract<ChangeSetMutation, { op: 'update_palette_color' }> = {
+				op: 'update_palette_color',
+				id: color.id
+			};
+			if (base.hex !== color.hex) update.hex = color.hex;
+			if (base.name !== color.name) update.name = color.name;
+			if (base.description !== color.description) update.description = color.description;
+			if (base.position !== color.position) update.position = color.position;
+			mutations.push(update);
+		}
+	}
+
+	for (const color of baseColors) {
+		if (!currentMap.has(color.id)) {
+			mutations.push({ op: 'delete_palette_color', id: color.id });
 		}
 	}
 

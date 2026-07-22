@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Shared pending Change Set across vocabulary navigation; 02 — Initial Snapshot with Fitzgerald-default Palette on Vocabulary create.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] `/vocabularies/[id]/settings` exists as a settings shell; Palette editing is the first (and for now only) section
 - [ ] The Vocabulary ⋯ menu includes a Settings item that is an `<a>` to that route (not a button navigation)

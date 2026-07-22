@@ -1,10 +1,12 @@
 import {
 	diffBoardButtonMutations,
+	diffPaletteMutations,
 	type BoardSnapshot,
 	type ButtonSnapshot,
-	type ChangeSetMutation
+	type ChangeSetMutation,
+	type PaletteColorSnapshot
 } from './changeSetMutations';
-import type { Board, BoardButton } from './types';
+import type { Board, BoardButton, PaletteColor } from './types';
 
 export type SuggestedChangeSet = {
 	id: string;
@@ -20,6 +22,9 @@ export type VocabularyEditorSession = {
 	buttonsByBoardId: Record<string, BoardButton[]>;
 	baseBoards: Board[];
 	baseButtonsByBoardId: Record<string, BoardButton[]>;
+	paletteColors: PaletteColor[];
+	basePaletteColors: PaletteColor[];
+	paletteHydrated: boolean;
 	selectedBoardId: string | null;
 	suggestedChangeSets: SuggestedChangeSet[];
 	hydrated: boolean;
@@ -63,6 +68,20 @@ function allButtonsFromMap(map: Record<string, BoardButton[]>) {
 	return Object.values(map).flat();
 }
 
+function clonePaletteColors(value: PaletteColor[]): PaletteColor[] {
+	return structuredClone(value);
+}
+
+function toPaletteSnapshot(color: PaletteColor): PaletteColorSnapshot {
+	return {
+		id: color.id,
+		hex: color.hex,
+		name: color.name,
+		description: color.description,
+		position: color.position
+	};
+}
+
 export function __resetVocabularyEditorSessionsForTests() {
 	sessions.clear();
 }
@@ -88,6 +107,9 @@ export function persistEditorSession(
 			| 'buttonsByBoardId'
 			| 'baseBoards'
 			| 'baseButtonsByBoardId'
+			| 'paletteColors'
+			| 'basePaletteColors'
+			| 'paletteHydrated'
 			| 'selectedBoardId'
 			| 'suggestedChangeSets'
 			| 'hydrated'
@@ -102,6 +124,11 @@ export function persistEditorSession(
 	if (patch.baseButtonsByBoardId) {
 		session.baseButtonsByBoardId = cloneButtonsByBoardId(patch.baseButtonsByBoardId);
 	}
+	if (patch.paletteColors) session.paletteColors = clonePaletteColors(patch.paletteColors);
+	if (patch.basePaletteColors) {
+		session.basePaletteColors = clonePaletteColors(patch.basePaletteColors);
+	}
+	if (patch.paletteHydrated !== undefined) session.paletteHydrated = patch.paletteHydrated;
 	if (patch.selectedBoardId !== undefined) session.selectedBoardId = patch.selectedBoardId;
 	if (patch.suggestedChangeSets) {
 		session.suggestedChangeSets = structuredClone(patch.suggestedChangeSets);
@@ -119,6 +146,9 @@ export function getVocabularyEditorSession(vocabularyId: string): VocabularyEdit
 			buttonsByBoardId: {},
 			baseBoards: [],
 			baseButtonsByBoardId: {},
+			paletteColors: [],
+			basePaletteColors: [],
+			paletteHydrated: false,
 			selectedBoardId: null,
 			suggestedChangeSets: [],
 			hydrated: false
@@ -131,12 +161,18 @@ export function getVocabularyEditorSession(vocabularyId: string): VocabularyEdit
 export function replaceEditorLiveFromServer(
 	session: VocabularyEditorSession,
 	boards: Board[],
-	buttonsByBoardId: Record<string, BoardButton[]>
+	buttonsByBoardId: Record<string, BoardButton[]>,
+	paletteColors?: PaletteColor[]
 ) {
 	session.boards = cloneBoards(boards);
 	session.buttonsByBoardId = cloneButtonsByBoardId(buttonsByBoardId);
 	session.baseBoards = cloneBoards(boards);
 	session.baseButtonsByBoardId = cloneButtonsByBoardId(buttonsByBoardId);
+	if (paletteColors) {
+		session.paletteColors = clonePaletteColors(paletteColors);
+		session.basePaletteColors = clonePaletteColors(paletteColors);
+		session.paletteHydrated = true;
+	}
 	if (
 		!session.selectedBoardId ||
 		!boards.some((board) => board.id === session.selectedBoardId)
@@ -147,15 +183,27 @@ export function replaceEditorLiveFromServer(
 	bumpEditorRevision();
 }
 
+export function replaceEditorPaletteFromServer(
+	session: VocabularyEditorSession,
+	paletteColors: PaletteColor[]
+) {
+	session.paletteColors = clonePaletteColors(paletteColors);
+	session.basePaletteColors = clonePaletteColors(paletteColors);
+	session.paletteHydrated = true;
+	bumpEditorRevision();
+}
+
 export function acceptEditorBase(session: VocabularyEditorSession) {
 	session.baseBoards = cloneBoards(session.boards);
 	session.baseButtonsByBoardId = cloneButtonsByBoardId(session.buttonsByBoardId);
+	session.basePaletteColors = clonePaletteColors(session.paletteColors);
 	bumpEditorRevision();
 }
 
 export function discardEditorChanges(session: VocabularyEditorSession) {
 	session.boards = cloneBoards(session.baseBoards);
 	session.buttonsByBoardId = cloneButtonsByBoardId(session.baseButtonsByBoardId);
+	session.paletteColors = clonePaletteColors(session.basePaletteColors);
 	if (
 		!session.selectedBoardId ||
 		!session.boards.some((board) => board.id === session.selectedBoardId)
@@ -176,6 +224,17 @@ export function pendingBoardButtonMutations(
 	);
 }
 
+export function pendingPaletteMutations(session: VocabularyEditorSession): ChangeSetMutation[] {
+	return diffPaletteMutations(
+		session.basePaletteColors.map(toPaletteSnapshot),
+		session.paletteColors.map(toPaletteSnapshot)
+	);
+}
+
+export function pendingEditorMutations(session: VocabularyEditorSession): ChangeSetMutation[] {
+	return [...pendingBoardButtonMutations(session), ...pendingPaletteMutations(session)];
+}
+
 export function isEditorDirty(session: VocabularyEditorSession) {
-	return pendingBoardButtonMutations(session).length > 0;
+	return pendingEditorMutations(session).length > 0;
 }
