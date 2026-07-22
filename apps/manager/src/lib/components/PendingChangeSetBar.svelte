@@ -7,7 +7,7 @@
 		isEditorDirty,
 		pendingEditorMutations,
 		persistEditorSession,
-		replaceEditorLiveFromServer,
+		rebaseEditorOntoLiveFromServer,
 		subscribeEditorRevision,
 		type SuggestedChangeSet
 	} from '$lib/vocabularyEditorSession';
@@ -68,7 +68,7 @@
 				nextButtonsByBoardId[board.id] = buttonData.buttons;
 			})
 		);
-		replaceEditorLiveFromServer(
+		rebaseEditorOntoLiveFromServer(
 			session,
 			boardData.boards,
 			nextButtonsByBoardId,
@@ -106,7 +106,7 @@
 	}
 
 	async function applySuggestedChangeSet(changeSetId: string) {
-		if (suggestionActionId || isDirty) return;
+		if (suggestionActionId) return;
 		suggestionActionId = changeSetId;
 		submitError = null;
 		try {
@@ -157,7 +157,7 @@
 						<button
 							type="button"
 							class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-							disabled={suggestionActionId !== null || isDirty}
+							disabled={suggestionActionId !== null}
 							onclick={() => deleteSuggestedChangeSet(changeSet.id)}
 						>
 							{suggestionActionId === changeSet.id ? 'Working…' : 'Delete'}
@@ -165,7 +165,7 @@
 						<button
 							type="button"
 							class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-							disabled={suggestionActionId !== null || isDirty}
+							disabled={suggestionActionId !== null}
 							onclick={() => applySuggestedChangeSet(changeSet.id)}
 						>
 							{suggestionActionId === changeSet.id ? 'Working…' : 'Apply'}
@@ -174,11 +174,6 @@
 				</li>
 			{/each}
 		</ul>
-		{#if isDirty}
-			<p class="mt-2 text-xs text-slate-500">
-				Submit or discard unsaved changes before applying a suggestion.
-			</p>
-		{/if}
 		{#if submitError && !isDirty}
 			<p class="mt-2 text-sm text-red-700">{submitError}</p>
 		{/if}
