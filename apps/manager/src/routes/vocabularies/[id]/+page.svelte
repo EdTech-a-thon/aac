@@ -223,6 +223,13 @@
 					</button>
 				{/snippet}
 				{#snippet children({ close })}
+					<a
+						href={`/vocabularies/${vocabularyId}/settings`}
+						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+						onclick={() => close()}
+					>
+						Settings
+					</a>
 					<button
 						type="button"
 						class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"

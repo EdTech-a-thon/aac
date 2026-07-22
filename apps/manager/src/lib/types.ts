@@ -1,3 +1,7 @@
+import type { ButtonAction } from './buttonAction';
+
+export type { ButtonAction };
+
 export type Vocabulary = {
 	id: string;
 	name: string;
@@ -24,6 +28,7 @@ export type BoardButton = {
 	col_index: number;
 	label: string;
 	background_color: string;
+	action: ButtonAction | null;
 	created_at: string;
 	updated_at: string;
 };

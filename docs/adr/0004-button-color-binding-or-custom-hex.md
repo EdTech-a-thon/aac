@@ -1,0 +1,3 @@
+# Button background is unset, Palette Color binding, or custom hex
+
+Managers need Fitzgerald-style meaning colors that can change globally (edit “Nouns” once, every bound Button updates) and also one-off paints that are not Vocabulary meanings. A Button’s background is therefore unset (default; UI label None; renders white), a binding to one Palette Color, or a custom `#RRGGBB` — never auto-bound just because paint matches a Palette Color. Storing only a hex snapshot was rejected because it cannot retarget meaning across Boards in one Palette edit. Palette-only colors (no custom hex) were rejected because Managers still need arbitrary paints outside the Palette.

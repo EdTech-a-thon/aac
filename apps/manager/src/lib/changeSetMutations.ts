@@ -1,3 +1,5 @@
+import { actionKey, type ButtonAction } from './buttonAction';
+
 export type BoardSnapshot = {
 	id: string;
 	name: string;
@@ -12,6 +14,7 @@ export type ButtonSnapshot = {
 	col_index: number;
 	label: string;
 	background_color: string;
+	action: ButtonAction | null;
 };
 
 export type ChangeSetMutation =
@@ -38,6 +41,7 @@ export type ChangeSetMutation =
 			col_index: number;
 			label: string;
 			background_color: string;
+			action?: ButtonAction | null;
 	  }
 	| {
 			op: 'update_button';
@@ -47,6 +51,7 @@ export type ChangeSetMutation =
 			col_index?: number;
 			label?: string;
 			background_color?: string;
+			action?: ButtonAction | null;
 	  }
 	| { op: 'delete_button'; id: string };
 
@@ -55,7 +60,7 @@ function boardKey(board: BoardSnapshot) {
 }
 
 function buttonKey(button: ButtonSnapshot) {
-	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color}`;
+	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color}\0${actionKey(button.action)}`;
 }
 
 /** Diff last-synced server snapshots against current local editor state. */
@@ -102,7 +107,7 @@ export function diffBoardButtonMutations(
 	for (const button of currentButtons) {
 		const base = baseButtonMap.get(button.id);
 		if (!base) {
-			mutations.push({
+			const create: Extract<ChangeSetMutation, { op: 'create_button' }> = {
 				op: 'create_button',
 				id: button.id,
 				board_id: button.board_id,
@@ -110,18 +115,27 @@ export function diffBoardButtonMutations(
 				col_index: button.col_index,
 				label: button.label,
 				background_color: button.background_color
-			});
+			};
+			if (button.action) create.action = button.action;
+			mutations.push(create);
 		} else if (buttonKey(base) !== buttonKey(button)) {
 			const update: Extract<ChangeSetMutation, { op: 'update_button' }> = {
 				op: 'update_button',
 				id: button.id
 			};
 			if (base.board_id !== button.board_id) update.board_id = button.board_id;
-			if (base.row_index !== button.row_index) update.row_index = button.row_index;
-			if (base.col_index !== button.col_index) update.col_index = button.col_index;
+			// Position is an absolute (row, col) pair — always emit both so applying a
+			// suggestion last-write-wins the whole cell, not a sparse axis patch.
+			if (base.row_index !== button.row_index || base.col_index !== button.col_index) {
+				update.row_index = button.row_index;
+				update.col_index = button.col_index;
+			}
 			if (base.label !== button.label) update.label = button.label;
 			if (base.background_color !== button.background_color) {
 				update.background_color = button.background_color;
+			}
+			if (actionKey(base.action) !== actionKey(button.action)) {
+				update.action = button.action;
 			}
 			mutations.push(update);
 		}

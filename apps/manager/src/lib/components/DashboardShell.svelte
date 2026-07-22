@@ -181,16 +181,6 @@
 	</header>
 
 	<aside class="flex min-h-0 flex-col border-r border-slate-200 bg-white">
-		<div class="border-b border-slate-100 p-3">
-			<button
-				type="button"
-				class="w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-				onclick={openCreate}
-			>
-				+ New vocabulary
-			</button>
-		</div>
-
 		<div class="min-h-0 flex-1 overflow-y-auto p-2">
 			{#if dashboard.loading}
 				<p class="px-2 py-4 text-center text-sm text-slate-500">Loading…</p>
@@ -281,6 +271,16 @@
 		{#if dashboard.error}
 			<p class="border-t border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">{dashboard.error}</p>
 		{/if}
+
+		<div class="shrink-0 border-t border-slate-100 p-3">
+			<button
+				type="button"
+				class="w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+				onclick={openCreate}
+			>
+				+ New vocabulary
+			</button>
+		</div>
 	</aside>
 
 	<main class="min-h-0 overflow-auto bg-slate-50">

@@ -1,13 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import ButtonActionEditor from '$lib/components/ButtonActionEditor.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { apiFetch, type AuthState } from '$lib/auth';
-	import {
-		diffBoardButtonMutations,
-		type BoardSnapshot,
-		type ButtonSnapshot
-	} from '$lib/changeSetMutations';
+	import { actionsEqual, type ButtonAction } from '$lib/buttonAction';
 	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
@@ -15,14 +12,12 @@
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
 	import type { Board, BoardButton } from '$lib/types';
-
-	type SuggestedChangeSet = {
-		id: string;
-		status: 'suggested';
-		mutations: unknown[];
-		created_at: string;
-		author_id: string | null;
-	};
+	import {
+		getVocabularyEditorSession,
+		persistEditorSession,
+		replaceEditorLiveFromServer,
+		subscribeEditorRevision
+	} from '$lib/vocabularyEditorSession';
 
 	let {
 		vocabularyId,
@@ -37,22 +32,46 @@
 	const MIN_ZOOM = 0.15;
 	const MAX_ZOOM = 4;
 
-	let boards = $state<Board[]>([]);
-	let buttonsByBoardId = $state<Record<string, BoardButton[]>>({});
-	let baseBoards = $state<Board[]>([]);
-	let baseButtonsByBoardId = $state<Record<string, BoardButton[]>>({});
-	let suggestedChangeSets = $state<SuggestedChangeSet[]>([]);
-	let selectedBoardId = $state<string | null>(null);
+	const session = $derived(getVocabularyEditorSession(vocabularyId));
+	let revision = $state(0);
+	$effect(() => subscribeEditorRevision(() => {
+		revision += 1;
+	}));
+
+	const boards = $derived.by(() => {
+		revision;
+		return session.boards;
+	});
+	const buttonsByBoardId = $derived.by(() => {
+		revision;
+		return session.buttonsByBoardId;
+	});
+	const selectedBoardId = $derived.by(() => {
+		revision;
+		return session.selectedBoardId;
+	});
+
 	let selectedButtonId = $state<string | null>(null);
 	let loadingBoards = $state(true);
-	let loadingButtons = $state(false);
+	let loadingButtons = $state(true);
 	let error = $state<string | null>(null);
-	let submitError = $state<string | null>(null);
-	let submitting = $state(false);
-	let suggestionActionId = $state<string | null>(null);
+
+	function setBoards(next: Board[]) {
+		persistEditorSession(session, { boards: next });
+	}
+
+	function setButtonsByBoardId(next: Record<string, BoardButton[]>) {
+		persistEditorSession(session, { buttonsByBoardId: next });
+	}
+
+	function setSelectedBoardId(next: string | null) {
+		persistEditorSession(session, { selectedBoardId: next });
+	}
 
 	let createOpen = $state(false);
 	let newBoardName = $state('');
+	let newBoardWidth = $state(6);
+	let newBoardHeight = $state(5);
 	let createError = $state<string | null>(null);
 
 	let renameOpen = $state(false);
@@ -92,6 +111,10 @@
 		originCol: number;
 		currentRow: number;
 		currentCol: number;
+		grabOffsetX: number;
+		grabOffsetY: number;
+		floatX: number;
+		floatY: number;
 		active: boolean;
 	} | null>(null);
 	let didDrag = $state(false);
@@ -109,17 +132,6 @@
 	const selectedButton = $derived(
 		buttons.find((button) => button.id === selectedButtonId) ?? null
 	);
-
-	const pendingMutations = $derived(
-		diffBoardButtonMutations(
-			baseBoards.map(toBoardSnapshot),
-			allButtonsFromMap(baseButtonsByBoardId).map(toButtonSnapshot),
-			boards.map(toBoardSnapshot),
-			allButtonsFromMap(buttonsByBoardId).map(toButtonSnapshot)
-		)
-	);
-
-	const isDirty = $derived(pendingMutations.length > 0);
 
 	const viewportCells = $derived.by(() => {
 		const board = selectedBoard;
@@ -164,69 +176,9 @@
 		return right < 0 || left > canvasWidth || bottom < 0 || top > canvasHeight;
 	});
 
-	function toBoardSnapshot(board: Board): BoardSnapshot {
-		return {
-			id: board.id,
-			name: board.name,
-			width: board.width,
-			height: board.height
-		};
-	}
-
-	function toButtonSnapshot(button: BoardButton): ButtonSnapshot {
-		return {
-			id: button.id,
-			board_id: button.board_id,
-			row_index: button.row_index,
-			col_index: button.col_index,
-			label: button.label,
-			background_color: button.background_color
-		};
-	}
-
-	function allButtonsFromMap(map: Record<string, BoardButton[]>) {
-		return Object.values(map).flat();
-	}
-
-	function setBaseFromCurrent() {
-		baseBoards = structuredClone(boards);
-		baseButtonsByBoardId = structuredClone(buttonsByBoardId);
-	}
-
-	async function reloadSuggestedChangeSets() {
-		const data = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
-			`/vocabularies/${vocabularyId}/change-sets?status=suggested`,
-			{ accessToken: auth.session.access_token }
-		);
-		suggestedChangeSets = data.changeSets;
-	}
-
-	async function reloadLiveBoardsAndButtons() {
-		const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${vocabularyId}/boards`, {
-			accessToken: auth.session.access_token
-		});
-		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
-		await Promise.all(
-			data.boards.map(async (board) => {
-				const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
-					`/vocabularies/${vocabularyId}/boards/${board.id}/buttons`,
-					{ accessToken: auth.session.access_token }
-				);
-				nextButtonsByBoardId[board.id] = buttonData.buttons;
-			})
-		);
-		boards = data.boards;
-		buttonsByBoardId = nextButtonsByBoardId;
-		setBaseFromCurrent();
-		if (!selectedBoardId || !data.boards.some((board) => board.id === selectedBoardId)) {
-			selectedBoardId = data.boards[0]?.id ?? null;
-		}
-		selectedButtonId = null;
-	}
-
 	function setCurrentBoardButtons(next: BoardButton[]) {
 		if (!selectedBoardId) return;
-		buttonsByBoardId = { ...buttonsByBoardId, [selectedBoardId]: next };
+		setButtonsByBoardId({ ...buttonsByBoardId, [selectedBoardId]: next });
 	}
 
 	function boardDisplayName(name: string) {
@@ -251,28 +203,70 @@
 		const el = canvasEl;
 		if (!board || !el) return;
 
+		// Bounds in the transformed board-frame's local space (origin = card top-left).
+		let minX = 0;
+		let minY = 0;
+		let maxX = boardPixelWidth + boardFramePad;
+		let maxY = boardPixelHeight + boardFramePad;
+
+		for (const button of buttons) {
+			const left = BOARD_PAD + cellLeft(button.col_index);
+			const top = BOARD_PAD + cellTop(button.row_index);
+			minX = Math.min(minX, left);
+			minY = Math.min(minY, top);
+			maxX = Math.max(maxX, left + CELL);
+			maxY = Math.max(maxY, top + CELL);
+		}
+
+		const contentW = Math.max(maxX - minX, 1);
+		const contentH = Math.max(maxY - minY, 1);
 		const padding = 64;
 		const availableW = Math.max(el.clientWidth - padding * 2, 100);
 		const availableH = Math.max(el.clientHeight - padding * 2, 100);
 		const nextZoom = clampZoom(
-			Math.min(availableW / boardPixelWidth, availableH / boardPixelHeight, 1)
+			Math.min(availableW / contentW, availableH / contentH, 1)
 		);
 		zoom = nextZoom;
-		panX = (el.clientWidth - boardPixelWidth * nextZoom) / 2;
-		panY = (el.clientHeight - boardPixelHeight * nextZoom) / 2;
+		panX = (el.clientWidth - contentW * nextZoom) / 2 - minX * nextZoom;
+		panY = (el.clientHeight - contentH * nextZoom) / 2 - minY * nextZoom;
 		fittedBoardId = board.id;
 	}
 
 	$effect(() => {
 		const id = vocabularyId;
 		const token = auth.session.access_token;
+		const current = getVocabularyEditorSession(id);
 		let cancelled = false;
 
 		(async () => {
+			error = null;
+
+			async function refreshSuggested() {
+				try {
+					const suggested = await apiFetch<{
+						changeSets: import('$lib/vocabularyEditorSession').SuggestedChangeSet[];
+					}>(`/vocabularies/${id}/change-sets?status=suggested`, {
+						accessToken: token
+					});
+					if (!cancelled) {
+						persistEditorSession(current, { suggestedChangeSets: suggested.changeSets });
+					}
+				} catch {
+					if (!cancelled) {
+						persistEditorSession(current, { suggestedChangeSets: [] });
+					}
+				}
+			}
+
+			if (current.hydrated) {
+				loadingBoards = false;
+				loadingButtons = false;
+				await refreshSuggested();
+				return;
+			}
+
 			loadingBoards = true;
 			loadingButtons = true;
-			error = null;
-			submitError = null;
 			try {
 				const data = await apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
 					accessToken: token
@@ -293,27 +287,8 @@
 				);
 				if (cancelled) return;
 
-				boards = data.boards;
-				buttonsByBoardId = nextButtonsByBoardId;
-				setBaseFromCurrent();
-				try {
-					const suggested = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
-						`/vocabularies/${id}/change-sets?status=suggested`,
-						{ accessToken: token }
-					);
-					if (!cancelled) suggestedChangeSets = suggested.changeSets;
-				} catch {
-					if (!cancelled) suggestedChangeSets = [];
-				}
-
-				if (data.boards.length === 0) {
-					selectedBoardId = null;
-				} else if (
-					!selectedBoardId ||
-					!data.boards.some((board) => board.id === selectedBoardId)
-				) {
-					selectedBoardId = data.boards[0].id;
-				}
+				replaceEditorLiveFromServer(current, data.boards, nextButtonsByBoardId);
+				await refreshSuggested();
 			} catch (err) {
 				if (cancelled) return;
 				error = err instanceof Error ? err.message : 'Failed to load boards';
@@ -333,6 +308,13 @@
 	$effect(() => {
 		selectedBoardId;
 		selectedButtonId = null;
+	});
+
+	$effect(() => {
+		revision;
+		if (selectedButtonId && !buttons.some((button) => button.id === selectedButtonId)) {
+			selectedButtonId = null;
+		}
 	});
 
 	$effect(() => {
@@ -444,6 +426,8 @@
 
 	function openCreate() {
 		newBoardName = '';
+		newBoardWidth = 6;
+		newBoardHeight = 5;
 		createError = null;
 		createOpen = true;
 	}
@@ -452,6 +436,12 @@
 		event.preventDefault();
 		createError = null;
 		const name = newBoardName;
+		const width = Number(newBoardWidth);
+		const height = Number(newBoardHeight);
+		if (!Number.isInteger(width) || width < 1 || !Number.isInteger(height) || height < 1) {
+			createError = 'Width and height must be integers ≥ 1.';
+			return;
+		}
 		const id = crypto.randomUUID();
 		const now = new Date().toISOString();
 		const board: Board = {
@@ -459,17 +449,19 @@
 			vocabulary_id: vocabularyId,
 			name,
 			displayName: boardDisplayName(name),
-			width: 4,
-			height: 4,
+			width,
+			height,
 			created_at: now,
 			updated_at: now
 		};
-		boards = [...boards, board];
-		buttonsByBoardId = { ...buttonsByBoardId, [id]: [] };
-		selectedBoardId = id;
+		setBoards([...boards, board]);
+		setButtonsByBoardId({ ...buttonsByBoardId, [id]: [] });
+		setSelectedBoardId(id);
 		fittedBoardId = null;
 		createOpen = false;
 		newBoardName = '';
+		newBoardWidth = 6;
+		newBoardHeight = 5;
 	}
 
 	function openRename() {
@@ -485,10 +477,12 @@
 		renameError = null;
 		const name = renameDraft;
 		const now = new Date().toISOString();
-		boards = boards.map((board) =>
-			board.id === selectedBoard.id
-				? { ...board, name, displayName: boardDisplayName(name), updated_at: now }
-				: board
+		setBoards(
+			boards.map((board) =>
+				board.id === selectedBoard.id
+					? { ...board, name, displayName: boardDisplayName(name), updated_at: now }
+					: board
+			)
 		);
 		renameOpen = false;
 	}
@@ -502,84 +496,22 @@
 		if (!selectedBoard) return;
 		deleteError = null;
 		const id = selectedBoard.id;
-		boards = boards.filter((board) => board.id !== id);
+		const nextBoards = boards.filter((board) => board.id !== id);
 		const { [id]: _removed, ...rest } = buttonsByBoardId;
-		buttonsByBoardId = rest;
-		selectedBoardId = boards[0]?.id ?? null;
+		// Mirror server: clearing Open Board Actions that targeted the deleted Board.
+		const cleared: Record<string, BoardButton[]> = {};
+		for (const [boardId, list] of Object.entries(rest)) {
+			cleared[boardId] = list.map((button) =>
+				button.action?.kind === 'open_board' && button.action.board_id === id
+					? { ...button, action: null, updated_at: new Date().toISOString() }
+					: button
+			);
+		}
+		setBoards(nextBoards);
+		setButtonsByBoardId(cleared);
+		setSelectedBoardId(nextBoards[0]?.id ?? null);
 		fittedBoardId = null;
 		deleteOpen = false;
-	}
-
-	async function submitChangeSet(status: 'applied' | 'suggested') {
-		if (submitting || pendingMutations.length === 0) return;
-		submitting = true;
-		submitError = null;
-		error = null;
-		try {
-			await apiFetch(`/vocabularies/${vocabularyId}/change-sets`, {
-				method: 'POST',
-				accessToken: auth.session.access_token,
-				body: JSON.stringify({ status, mutations: pendingMutations })
-			});
-			if (status === 'applied') {
-				setBaseFromCurrent();
-			} else {
-				// Suggested leaves live Vocabulary unchanged — reset editor to live base.
-				discardChanges();
-				await reloadSuggestedChangeSets();
-			}
-		} catch (err) {
-			submitError = err instanceof Error ? err.message : 'Failed to submit changes';
-		} finally {
-			submitting = false;
-		}
-	}
-
-	function discardChanges() {
-		boards = structuredClone(baseBoards);
-		buttonsByBoardId = structuredClone(baseButtonsByBoardId);
-		if (!selectedBoardId || !boards.some((board) => board.id === selectedBoardId)) {
-			selectedBoardId = boards[0]?.id ?? null;
-		}
-		selectedButtonId = null;
-		submitError = null;
-		propsError = null;
-		boardSizeError = null;
-	}
-
-	async function applySuggestedChangeSet(changeSetId: string) {
-		if (suggestionActionId || isDirty) return;
-		suggestionActionId = changeSetId;
-		submitError = null;
-		try {
-			await apiFetch(`/vocabularies/${vocabularyId}/change-sets/${changeSetId}/apply`, {
-				method: 'POST',
-				accessToken: auth.session.access_token
-			});
-			await reloadLiveBoardsAndButtons();
-			await reloadSuggestedChangeSets();
-		} catch (err) {
-			submitError = err instanceof Error ? err.message : 'Failed to apply suggestion';
-		} finally {
-			suggestionActionId = null;
-		}
-	}
-
-	async function deleteSuggestedChangeSet(changeSetId: string) {
-		if (suggestionActionId) return;
-		suggestionActionId = changeSetId;
-		submitError = null;
-		try {
-			await apiFetch(`/vocabularies/${vocabularyId}/change-sets/${changeSetId}`, {
-				method: 'DELETE',
-				accessToken: auth.session.access_token
-			});
-			await reloadSuggestedChangeSets();
-		} catch (err) {
-			submitError = err instanceof Error ? err.message : 'Failed to delete suggestion';
-		} finally {
-			suggestionActionId = null;
-		}
 	}
 
 	function selectButton(button: BoardButton, event?: MouseEvent) {
@@ -593,18 +525,27 @@
 		selectedButtonId = null;
 	}
 
-	function pointerToCell(clientX: number, clientY: number) {
+	function pointerToBoardLocal(clientX: number, clientY: number) {
 		const el = canvasEl;
 		if (!el) return null;
 		const rect = el.getBoundingClientRect();
 		const worldX = (clientX - rect.left - panX) / zoom;
 		const worldY = (clientY - rect.top - panY) / zoom;
-		const localX = worldX - BOARD_PAD;
-		const localY = worldY - BOARD_PAD;
-		const col = Math.floor((localX + GAP / 2) / (CELL + GAP));
-		const row = Math.floor((localY + GAP / 2) / (CELL + GAP));
+		return { x: worldX - BOARD_PAD, y: worldY - BOARD_PAD };
+	}
+
+	function pointerToCell(clientX: number, clientY: number) {
+		const local = pointerToBoardLocal(clientX, clientY);
+		if (!local) return null;
+		const col = Math.floor((local.x + GAP / 2) / (CELL + GAP));
+		const row = Math.floor((local.y + GAP / 2) / (CELL + GAP));
 		if (!Number.isFinite(row) || !Number.isFinite(col)) return null;
 		return { row, col };
+	}
+
+	function dropTargetBlocked(row: number, col: number, buttonId: string) {
+		const occupant = buttonAtCell.get(`${row}:${col}`);
+		return Boolean(occupant && occupant.id !== buttonId);
 	}
 
 	function onButtonPointerDown(button: BoardButton, event: PointerEvent) {
@@ -612,6 +553,9 @@
 		event.stopPropagation();
 		selectedButtonId = button.id;
 		didDrag = false;
+		const originLeft = cellLeft(button.col_index);
+		const originTop = cellTop(button.row_index);
+		const local = pointerToBoardLocal(event.clientX, event.clientY);
 		drag = {
 			buttonId: button.id,
 			pointerId: event.pointerId,
@@ -621,6 +565,10 @@
 			originCol: button.col_index,
 			currentRow: button.row_index,
 			currentCol: button.col_index,
+			grabOffsetX: local ? local.x - originLeft : CELL / 2,
+			grabOffsetY: local ? local.y - originTop : CELL / 2,
+			floatX: originLeft,
+			floatY: originTop,
 			active: false
 		};
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -634,10 +582,26 @@
 			didDrag = true;
 		}
 		if (!drag.active) return;
+
+		const local = pointerToBoardLocal(event.clientX, event.clientY);
 		const cell = pointerToCell(event.clientX, event.clientY);
-		if (!cell) return;
-		if (cell.row !== drag.currentRow || cell.col !== drag.currentCol) {
-			drag = { ...drag, currentRow: cell.row, currentCol: cell.col };
+		const nextFloatX = local ? local.x - drag.grabOffsetX : drag.floatX;
+		const nextFloatY = local ? local.y - drag.grabOffsetY : drag.floatY;
+		const nextRow = cell?.row ?? drag.currentRow;
+		const nextCol = cell?.col ?? drag.currentCol;
+		if (
+			nextFloatX !== drag.floatX ||
+			nextFloatY !== drag.floatY ||
+			nextRow !== drag.currentRow ||
+			nextCol !== drag.currentCol
+		) {
+			drag = {
+				...drag,
+				floatX: nextFloatX,
+				floatY: nextFloatY,
+				currentRow: nextRow,
+				currentCol: nextCol
+			};
 		}
 	}
 
@@ -662,6 +626,13 @@
 			snapshot.currentRow === snapshot.originRow &&
 			snapshot.currentCol === snapshot.originCol
 		) {
+			queueMicrotask(() => {
+				didDrag = false;
+			});
+			return;
+		}
+
+		if (dropTargetBlocked(snapshot.currentRow, snapshot.currentCol, snapshot.buttonId)) {
 			queueMicrotask(() => {
 				didDrag = false;
 			});
@@ -700,6 +671,7 @@
 			col_index: col,
 			label: '',
 			background_color: DEFAULT_BUTTON_COLOR,
+			action: null,
 			created_at: now,
 			updated_at: now
 		};
@@ -721,9 +693,37 @@
 		if (!button) return;
 		if (label === button.label) return;
 
+		const previousLabel = button.label;
+		setCurrentBoardButtons(
+			buttons.map((b) => {
+				if (b.id !== button.id) return b;
+				let nextAction = b.action;
+				if (
+					(nextAction?.kind === 'insert_phrase' || nextAction?.kind === 'speak_immediately') &&
+					nextAction.phrase === previousLabel
+				) {
+					nextAction = label.trim()
+						? { kind: nextAction.kind, phrase: label }
+						: null;
+				}
+				return {
+					...b,
+					label,
+					action: nextAction,
+					updated_at: new Date().toISOString()
+				};
+			})
+		);
+	}
+
+	function updateSelectedAction(action: ButtonAction | null) {
+		const button = selectedButton;
+		if (!button) return;
+		if (actionsEqual(button.action, action)) return;
+
 		setCurrentBoardButtons(
 			buttons.map((b) =>
-				b.id === button.id ? { ...b, label, updated_at: new Date().toISOString() } : b
+				b.id === button.id ? { ...b, action, updated_at: new Date().toISOString() } : b
 			)
 		);
 	}
@@ -769,18 +769,11 @@
 
 		boardSizeError = null;
 		const now = new Date().toISOString();
-		boards = boards.map((b) =>
-			b.id === board.id ? { ...b, width, height, updated_at: now } : b
+		setBoards(
+			boards.map((b) => (b.id === board.id ? { ...b, width, height, updated_at: now } : b))
 		);
 		widthDraft = width;
 		heightDraft = height;
-	}
-
-	function buttonDisplayPosition(button: BoardButton) {
-		if (drag?.active && drag.buttonId === button.id) {
-			return { row: drag.currentRow, col: drag.currentCol };
-		}
-		return { row: button.row_index, col: button.col_index };
 	}
 
 	function onCanvasWheel(event: WheelEvent) {
@@ -892,7 +885,7 @@
 									? 'bg-blue-50 font-medium text-blue-800'
 									: 'text-slate-700 hover:bg-slate-50'}"
 								onclick={() => {
-									selectedBoardId = board.id;
+									setSelectedBoardId(board.id);
 									fittedBoardId = null;
 									close();
 								}}
@@ -1007,15 +1000,9 @@
 								{@const occupying = buttonAtCell.get(`${cell.row}:${cell.col}`)}
 								{@const isDragOrigin =
 									drag?.active && occupying && drag.buttonId === occupying.id}
-								{@const isDropTarget =
-									drag?.active &&
-									drag.currentRow === cell.row &&
-									drag.currentCol === cell.col}
 								<button
 									type="button"
-									class="absolute rounded-lg transition {isDropTarget
-										? 'bg-blue-200 ring-2 ring-blue-400'
-										: 'bg-slate-200/90 hover:bg-slate-300'}"
+									class="group absolute flex items-center justify-center rounded-lg bg-slate-200/90 hover:bg-slate-300 active:bg-slate-400"
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
 									aria-label={`Empty cell at row ${cell.row}, column ${cell.col}`}
 									disabled={Boolean(occupying && !isDragOrigin) || Boolean(drag?.active)}
@@ -1028,28 +1015,60 @@
 										}
 										createButtonAt(cell.row, cell.col, event);
 									}}
-								></button>
+								>
+									<span
+										class="pointer-events-none select-none text-3xl font-light leading-none text-slate-500 opacity-0 group-hover:opacity-50"
+										aria-hidden="true"
+									>
+										+
+									</span>
+								</button>
 							{/each}
 
+							{#if drag?.active}
+								{@const dropBlocked = dropTargetBlocked(
+									drag.currentRow,
+									drag.currentCol,
+									drag.buttonId
+								)}
+								<div
+									class="pointer-events-none absolute z-20 rounded-lg {dropBlocked
+										? ''
+										: 'bg-slate-700/25'}"
+									style={`left: ${cellLeft(drag.currentCol)}px; top: ${cellTop(drag.currentRow)}px; width: ${CELL}px; height: ${CELL}px;${
+										dropBlocked
+											? ' background-image: repeating-linear-gradient(-45deg, rgb(239 68 68 / 0.55), rgb(239 68 68 / 0.55) 5px, rgb(251 146 160 / 0.55) 5px, rgb(251 146 160 / 0.55) 10px);'
+											: ''
+									}`}
+								></div>
+							{/if}
+
 							{#each buttons as button (button.id)}
-								{@const pos = buttonDisplayPosition(button)}
 								{@const inViewport =
 									selectedBoard &&
-									pos.row >= 0 &&
-									pos.col >= 0 &&
-									pos.row < selectedBoard.height &&
-									pos.col < selectedBoard.width}
-								{@const isDragging = drag?.active && drag.buttonId === button.id}
+									button.row_index >= 0 &&
+									button.col_index >= 0 &&
+									button.row_index < selectedBoard.height &&
+									button.col_index < selectedBoard.width}
+								{@const isDragging = Boolean(
+									drag?.active && drag.buttonId === button.id
+								)}
+								{@const buttonLeft = isDragging && drag
+									? drag.floatX
+									: cellLeft(button.col_index)}
+								{@const buttonTop = isDragging && drag
+									? drag.floatY
+									: cellTop(button.row_index)}
 								<button
 									type="button"
-									class="absolute flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium shadow-sm transition {isDragging
-										? 'z-20 cursor-grabbing border-blue-500 opacity-90 ring-2 ring-blue-500/40'
+									class="absolute flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
+										? 'z-30 cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
 										: selectedButtonId === button.id
-											? 'z-10 cursor-grab border-blue-500 ring-2 ring-blue-500/40'
+											? 'z-10 cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
 											: inViewport
-												? 'cursor-grab border-slate-300 hover:border-slate-400'
-												: 'cursor-grab border-amber-300 hover:border-amber-400'}"
-									style={`left: ${cellLeft(pos.col)}px; top: ${cellTop(pos.row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${button.background_color || DEFAULT_BUTTON_COLOR}; color: ${contrastingTextColor(button.background_color || DEFAULT_BUTTON_COLOR)};`}
+												? 'cursor-grab border-slate-300 shadow-sm transition hover:border-slate-400'
+												: 'cursor-grab border-amber-300 shadow-sm transition hover:border-amber-400'}"
+									style={`left: ${buttonLeft}px; top: ${buttonTop}px; width: ${CELL}px; height: ${CELL}px; background-color: ${button.background_color || DEFAULT_BUTTON_COLOR}; color: ${contrastingTextColor(button.background_color || DEFAULT_BUTTON_COLOR)};`}
 									onpointerdown={(event) => onButtonPointerDown(button, event)}
 									onpointermove={onButtonPointerMove}
 									onpointerup={onButtonPointerUp}
@@ -1061,13 +1080,6 @@
 									</span>
 								</button>
 							{/each}
-
-							{#if drag?.active && selectedBoard && (drag.currentRow < 0 || drag.currentCol < 0 || drag.currentRow >= selectedBoard.height || drag.currentCol >= selectedBoard.width)}
-								<div
-									class="pointer-events-none absolute rounded-lg border-2 border-dashed border-blue-400 bg-blue-100/50"
-									style={`left: ${cellLeft(drag.currentCol)}px; top: ${cellTop(drag.currentRow)}px; width: ${CELL}px; height: ${CELL}px;`}
-								></div>
-							{/if}
 						</div>
 					</div>
 				</div>
@@ -1145,6 +1157,15 @@
 							</label>
 						</div>
 
+						<ButtonActionEditor
+							buttonId={selectedButton.id}
+							action={selectedButton.action ?? null}
+							label={selectedButton.label}
+							boards={boards}
+							currentBoardId={selectedBoardId}
+							onChange={updateSelectedAction}
+						/>
+
 						{#if propsError}
 							<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{propsError}</p>
 						{/if}
@@ -1219,84 +1240,6 @@
 		</div>
 	{/if}
 
-	{#if suggestedChangeSets.length > 0}
-		<div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
-			<p class="mb-2 text-sm font-medium text-slate-800">Suggested Change Sets</p>
-			<ul class="space-y-2">
-				{#each suggestedChangeSets as changeSet (changeSet.id)}
-					<li
-						class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-					>
-						<p class="text-sm text-slate-600">
-							{changeSet.mutations.length}
-							{changeSet.mutations.length === 1 ? 'mutation' : 'mutations'}
-						</p>
-						<div class="flex items-center gap-2">
-							<button
-								type="button"
-								class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-								disabled={suggestionActionId !== null || isDirty}
-								onclick={() => deleteSuggestedChangeSet(changeSet.id)}
-							>
-								{suggestionActionId === changeSet.id ? 'Working…' : 'Delete'}
-							</button>
-							<button
-								type="button"
-								class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-								disabled={suggestionActionId !== null || isDirty}
-								onclick={() => applySuggestedChangeSet(changeSet.id)}
-							>
-								{suggestionActionId === changeSet.id ? 'Working…' : 'Apply'}
-							</button>
-						</div>
-					</li>
-				{/each}
-			</ul>
-			{#if isDirty}
-				<p class="mt-2 text-xs text-slate-500">Submit or discard unsaved changes before applying a suggestion.</p>
-			{/if}
-			{#if submitError && !isDirty}
-				<p class="mt-2 text-sm text-red-700">{submitError}</p>
-			{/if}
-		</div>
-	{/if}
-
-	{#if isDirty}
-		<div
-			class="sticky bottom-0 z-30 flex flex-wrap items-center justify-between gap-3 border-t border-amber-200 bg-amber-50 px-4 py-3"
-		>
-			<p class="text-sm font-medium text-amber-900">Unsaved changes</p>
-			<div class="flex flex-wrap items-center gap-2">
-				{#if submitError}
-					<p class="text-sm text-red-700">{submitError}</p>
-				{/if}
-				<button
-					type="button"
-					class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={submitting}
-					onclick={discardChanges}
-				>
-					Discard
-				</button>
-				<button
-					type="button"
-					class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={submitting}
-					onclick={() => submitChangeSet('suggested')}
-				>
-					{submitting ? 'Submitting…' : 'Submit as suggestion'}
-				</button>
-				<button
-					type="button"
-					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={submitting}
-					onclick={() => submitChangeSet('applied')}
-				>
-					{submitting ? 'Submitting…' : 'Submit'}
-				</button>
-			</div>
-		</div>
-	{/if}
 </div>
 
 <Modal bind:open={createOpen} title="New board">
@@ -1310,7 +1253,28 @@
 				bind:value={newBoardName}
 			/>
 		</label>
-		<p class="text-sm text-slate-500">New boards start at 4×4.</p>
+		<div class="grid grid-cols-2 gap-3">
+			<label class="block space-y-1.5">
+				<span class="text-sm font-medium text-slate-700">Width</span>
+				<input
+					class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+					type="number"
+					min="1"
+					step="1"
+					bind:value={newBoardWidth}
+				/>
+			</label>
+			<label class="block space-y-1.5">
+				<span class="text-sm font-medium text-slate-700">Height</span>
+				<input
+					class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+					type="number"
+					min="1"
+					step="1"
+					bind:value={newBoardHeight}
+				/>
+			</label>
+		</div>
 		{#if createError}
 			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{createError}</p>
 		{/if}
