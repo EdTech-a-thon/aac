@@ -4,7 +4,12 @@
 
 **Blocked by:** 02 — Initial Snapshot with Fitzgerald-default Palette on Vocabulary create; 03 — Edit Palette via Change Sets on vocabulary settings.
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+## Notes
+
+Button color is unset | `palette_color_id` binding | custom `background_color`. New Buttons default to unset (None). Picker offers None, Vocabulary Palette Colors, custom hex, and a link to settings. Bound Buttons resolve display hex from the live Palette.
+
 
 - [ ] New Buttons have unset background (None); they render white
 - [ ] Managers can set None, bind to a Palette Color, or set a custom hex; clearing back to None is supported (None shown as a circled/slashed swatch)

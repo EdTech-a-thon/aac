@@ -11,6 +11,7 @@ describe('diffBoardButtonMutations Action', () => {
 			col_index: 0,
 			label: 'Hi',
 			background_color: '#FFFFFF',
+			palette_color_id: null,
 			action: null
 		};
 

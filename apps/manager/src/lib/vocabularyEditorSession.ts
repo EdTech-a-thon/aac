@@ -60,6 +60,7 @@ function toButtonSnapshot(button: BoardButton): ButtonSnapshot {
 		col_index: button.col_index,
 		label: button.label,
 		background_color: button.background_color,
+		palette_color_id: button.palette_color_id,
 		action: button.action ?? null
 	};
 }

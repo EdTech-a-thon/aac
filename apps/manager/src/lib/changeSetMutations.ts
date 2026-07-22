@@ -13,7 +13,8 @@ export type ButtonSnapshot = {
 	row_index: number;
 	col_index: number;
 	label: string;
-	background_color: string;
+	background_color: string | null;
+	palette_color_id: string | null;
 	action: ButtonAction | null;
 };
 
@@ -48,7 +49,8 @@ export type ChangeSetMutation =
 			row_index: number;
 			col_index: number;
 			label: string;
-			background_color: string;
+			background_color?: string | null;
+			palette_color_id?: string | null;
 			action?: ButtonAction | null;
 	  }
 	| {
@@ -58,7 +60,8 @@ export type ChangeSetMutation =
 			row_index?: number;
 			col_index?: number;
 			label?: string;
-			background_color?: string;
+			background_color?: string | null;
+			palette_color_id?: string | null;
 			action?: ButtonAction | null;
 	  }
 	| { op: 'delete_button'; id: string }
@@ -85,7 +88,7 @@ function boardKey(board: BoardSnapshot) {
 }
 
 function buttonKey(button: ButtonSnapshot) {
-	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color}\0${actionKey(button.action)}`;
+	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color ?? ''}\0${button.palette_color_id ?? ''}\0${actionKey(button.action)}`;
 }
 
 /** Diff last-synced server snapshots against current local editor state. */
@@ -138,9 +141,16 @@ export function diffBoardButtonMutations(
 				board_id: button.board_id,
 				row_index: button.row_index,
 				col_index: button.col_index,
-				label: button.label,
-				background_color: button.background_color
+				label: button.label
 			};
+			if (button.palette_color_id) {
+				create.palette_color_id = button.palette_color_id;
+			} else if (button.background_color) {
+				create.background_color = button.background_color;
+			} else {
+				create.background_color = null;
+				create.palette_color_id = null;
+			}
 			if (button.action) create.action = button.action;
 			mutations.push(create);
 		} else if (buttonKey(base) !== buttonKey(button)) {
@@ -156,8 +166,12 @@ export function diffBoardButtonMutations(
 				update.col_index = button.col_index;
 			}
 			if (base.label !== button.label) update.label = button.label;
-			if (base.background_color !== button.background_color) {
+			if (
+				base.background_color !== button.background_color ||
+				base.palette_color_id !== button.palette_color_id
+			) {
 				update.background_color = button.background_color;
+				update.palette_color_id = button.palette_color_id;
 			}
 			if (actionKey(base.action) !== actionKey(button.action)) {
 				update.action = button.action;

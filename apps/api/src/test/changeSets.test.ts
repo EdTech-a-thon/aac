@@ -10,6 +10,19 @@ type Board = {
   width: number;
   height: number;
 };
+type ButtonAction =
+  | { kind: "insert_phrase"; phrase: string }
+  | { kind: "speak_immediately"; phrase: string }
+  | { kind: "open_board"; board_id: string }
+  | {
+      kind: "play_youtube_clip";
+      video_id: string;
+      start: number;
+      end: number;
+    }
+  | { kind: "clear_message_bar" }
+  | { kind: "backspace" };
+
 type Button = {
   id: string;
   board_id: string;
@@ -17,6 +30,7 @@ type Button = {
   col_index: number;
   label: string;
   background_color: string;
+  action: ButtonAction | null;
 };
 type ChangeSet = {
   id: string;
@@ -361,6 +375,382 @@ describe("Change Sets HTTP API", () => {
         background_color: "#ff0000",
       }),
     ]);
+  });
+
+  it("applying a position suggestion last-write-wins absolute (row, col)", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+    const boardId = randomUUID();
+    const buttonId = randomUUID();
+
+    const seeded = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_board",
+              id: boardId,
+              name: "Grid",
+              width: 3,
+              height: 3,
+            },
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: boardId,
+              row_index: 0,
+              col_index: 0,
+              label: "Tile",
+              background_color: "#FFFFFF",
+            },
+          ],
+        },
+      },
+    );
+    expect(seeded.status).toBe(201);
+
+    // Suggest moving down to (1, 0) — both axes stored as absolute position.
+    const suggestion = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "suggested",
+          mutations: [
+            {
+              op: "update_button",
+              id: buttonId,
+              row_index: 1,
+              col_index: 0,
+            },
+          ],
+        },
+      },
+    );
+    expect(suggestion.status).toBe(201);
+
+    // Meanwhile, apply a move right to (0, 1).
+    const intervening = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "update_button",
+              id: buttonId,
+              row_index: 0,
+              col_index: 1,
+            },
+          ],
+        },
+      },
+    );
+    expect(intervening.status).toBe(201);
+
+    const applied = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets/${suggestion.body.changeSet.id}/apply`,
+      { method: "POST", accessToken: manager.accessToken },
+    );
+    expect(applied.status).toBe(200);
+
+    const buttons = await apiJson<{ buttons: Button[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards/${boardId}/buttons`,
+      { accessToken: manager.accessToken },
+    );
+    expect(buttons.status).toBe(200);
+    expect(buttons.body.buttons).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        row_index: 1,
+        col_index: 0,
+      }),
+    ]);
+  });
+
+  it("Applied Change Set can create a Button with an Insert Phrase Action", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+    const boardId = randomUUID();
+    const buttonId = randomUUID();
+
+    const submitted = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_board",
+              id: boardId,
+              name: "Grid",
+              width: 2,
+              height: 2,
+            },
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: boardId,
+              row_index: 0,
+              col_index: 0,
+              label: "Hi",
+              background_color: "#FFFFFF",
+              action: { kind: "insert_phrase", phrase: "hello" },
+            },
+          ],
+        },
+      },
+    );
+    expect(submitted.status).toBe(201);
+
+    const buttons = await apiJson<{ buttons: Button[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards/${boardId}/buttons`,
+      { accessToken: manager.accessToken },
+    );
+    expect(buttons.status).toBe(200);
+    expect(buttons.body.buttons).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        label: "Hi",
+        action: { kind: "insert_phrase", phrase: "hello" },
+      }),
+    ]);
+  });
+
+  it("deleting a Board clears Open Board Actions that targeted it", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+    const homeId = randomUUID();
+    const foodsId = randomUUID();
+    const buttonId = randomUUID();
+
+    const seeded = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_board",
+              id: homeId,
+              name: "Home",
+              width: 2,
+              height: 2,
+            },
+            {
+              op: "create_board",
+              id: foodsId,
+              name: "Foods",
+              width: 2,
+              height: 2,
+            },
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: homeId,
+              row_index: 0,
+              col_index: 0,
+              label: "Foods",
+              background_color: "#FFFFFF",
+              action: { kind: "open_board", board_id: foodsId },
+            },
+          ],
+        },
+      },
+    );
+    expect(seeded.status).toBe(201);
+
+    const deleted = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [{ op: "delete_board", id: foodsId }],
+        },
+      },
+    );
+    expect(deleted.status).toBe(201);
+
+    const buttons = await apiJson<{ buttons: Button[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards/${homeId}/buttons`,
+      { accessToken: manager.accessToken },
+    );
+    expect(buttons.status).toBe(200);
+    expect(buttons.body.buttons).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        action: null,
+      }),
+    ]);
+  });
+
+  it("update_button can set and clear a Button Action", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+    const boardId = randomUUID();
+    const buttonId = randomUUID();
+
+    const seeded = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_board",
+              id: boardId,
+              name: "Grid",
+              width: 2,
+              height: 2,
+            },
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: boardId,
+              row_index: 0,
+              col_index: 0,
+              label: "Hi",
+              background_color: "#FFFFFF",
+            },
+          ],
+        },
+      },
+    );
+    expect(seeded.status).toBe(201);
+
+    const setAction = await apiJson<{ changeSet: ChangeSet; error?: string }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "update_button",
+              id: buttonId,
+              action: { kind: "speak_immediately", phrase: "hello" },
+            },
+          ],
+        },
+      },
+    );
+    expect(setAction.status).toBe(201);
+
+    let buttons = await apiJson<{ buttons: Button[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards/${boardId}/buttons`,
+      { accessToken: manager.accessToken },
+    );
+    expect(buttons.body.buttons).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        action: { kind: "speak_immediately", phrase: "hello" },
+      }),
+    ]);
+
+    const clearAction = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "update_button",
+              id: buttonId,
+              action: null,
+            },
+          ],
+        },
+      },
+    );
+    expect(clearAction.status).toBe(201);
+
+    buttons = await apiJson<{ buttons: Button[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards/${boardId}/buttons`,
+      { accessToken: manager.accessToken },
+    );
+    expect(buttons.body.buttons).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        action: null,
+      }),
+    ]);
+  });
+
+  it("rejects Insert Phrase with a blank phrase", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken);
+    const boardId = randomUUID();
+    const buttonId = randomUUID();
+
+    const submitted = await apiJson<{ changeSet?: ChangeSet; error?: string }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_board",
+              id: boardId,
+              name: "Grid",
+              width: 2,
+              height: 2,
+            },
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: boardId,
+              row_index: 0,
+              col_index: 0,
+              label: "Hi",
+              background_color: "#FFFFFF",
+              action: { kind: "insert_phrase", phrase: "   " },
+            },
+          ],
+        },
+      },
+    );
+    expect(submitted.status).toBeGreaterThanOrEqual(400);
   });
 
   it("vocabulary rename still works without Change Sets", async () => {

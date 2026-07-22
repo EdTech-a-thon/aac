@@ -4,7 +4,12 @@
 
 **Blocked by:** 01 — Shared pending Change Set across vocabulary navigation; 02 — Initial Snapshot with Fitzgerald-default Palette on Vocabulary create.
 
-**Status:** claimed
+**Status:** resolved
+
+## Notes
+
+Palette create/update/delete via Change Sets; settings page edits into shared session; PendingChangeSetBar submits board+palette mutations together. Delete-in-use resolution deferred to ticket 05.
+
 
 - [ ] `/vocabularies/[id]/settings` exists as a settings shell; Palette editing is the first (and for now only) section
 - [ ] The Vocabulary ⋯ menu includes a Settings item that is an `<a>` to that route (not a button navigation)

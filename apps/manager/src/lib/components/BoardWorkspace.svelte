@@ -8,7 +8,6 @@
 	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
-		FITZGERALD_COLORS,
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
 	import type { Board, BoardButton } from '$lib/types';
@@ -50,6 +49,19 @@
 		revision;
 		return session.selectedBoardId;
 	});
+
+	const paletteColors = $derived.by(() => {
+		revision;
+		return session.paletteColors;
+	});
+
+	function resolveButtonHex(button: BoardButton): string {
+		if (button.palette_color_id) {
+			const color = paletteColors.find((c) => c.id === button.palette_color_id);
+			if (color) return color.hex;
+		}
+		return button.background_color ?? DEFAULT_BUTTON_COLOR;
+	}
 
 	let selectedButtonId = $state<string | null>(null);
 	let loadingBoards = $state(true);
@@ -363,7 +375,10 @@
 
 		const button = untrack(() => buttons.find((b) => b.id === id));
 		labelDraft = button?.label ?? '';
-		colorDraft = normalizeHexColor(button?.background_color ?? '') ?? DEFAULT_BUTTON_COLOR;
+		colorDraft =
+			normalizeHexColor(button?.background_color ?? '') ??
+			normalizeHexColor(untrack(() => (button ? resolveButtonHex(button) : ''))) ??
+			DEFAULT_BUTTON_COLOR;
 		propsError = null;
 	});
 
@@ -681,7 +696,8 @@
 			row_index: row,
 			col_index: col,
 			label: '',
-			background_color: DEFAULT_BUTTON_COLOR,
+			background_color: null,
+			palette_color_id: null,
 			action: null,
 			created_at: now,
 			updated_at: now
@@ -740,28 +756,82 @@
 	}
 
 	function updateSelectedColor(color: string = colorDraft) {
-		const button = selectedButton;
+		if (!selectedButtonId) return;
+		const button = buttons.find((b) => b.id === selectedButtonId);
 		if (!button) return;
 		const normalized = normalizeHexColor(color);
 		if (!normalized) {
 			propsError = 'Color must be a hex value like #RRGGBB.';
 			return;
 		}
-		if (normalized === button.background_color.toLowerCase()) {
+		propsError = null;
+		if (
+			button.palette_color_id === null &&
+			button.background_color?.toLowerCase() === normalized
+		) {
 			colorDraft = normalized;
 			return;
 		}
-
-		propsError = null;
 		colorDraft = normalized;
+		const now = new Date().toISOString();
 		setCurrentBoardButtons(
 			buttons.map((b) =>
 				b.id === button.id
-					? { ...b, background_color: normalized, updated_at: new Date().toISOString() }
+					? {
+							...b,
+							background_color: normalized,
+							palette_color_id: null,
+							updated_at: now
+						}
 					: b
 			)
 		);
 	}
+
+	function selectNoneColor() {
+		if (!selectedButtonId) return;
+		const button = buttons.find((b) => b.id === selectedButtonId);
+		if (!button) return;
+		if (button.background_color === null && button.palette_color_id === null) return;
+		propsError = null;
+		colorDraft = DEFAULT_BUTTON_COLOR;
+		const now = new Date().toISOString();
+		setCurrentBoardButtons(
+			buttons.map((b) =>
+				b.id === button.id
+					? { ...b, background_color: null, palette_color_id: null, updated_at: now }
+					: b
+			)
+		);
+	}
+
+	function selectPaletteColor(paletteColorId: string) {
+		if (!selectedButtonId) return;
+		const button = buttons.find((b) => b.id === selectedButtonId);
+		if (!button) return;
+		const color = paletteColors.find((c) => c.id === paletteColorId);
+		if (!color) return;
+		propsError = null;
+		if (button.palette_color_id === paletteColorId) {
+			colorDraft = color.hex;
+			return;
+		}
+		colorDraft = color.hex;
+		const now = new Date().toISOString();
+		setCurrentBoardButtons(
+			buttons.map((b) =>
+				b.id === button.id
+					? {
+							...b,
+							background_color: null,
+							palette_color_id: paletteColorId,
+							updated_at: now
+						}
+					: b
+			)
+		);
+	}
+
 
 	function applyBoardSize() {
 		const board = selectedBoard;
@@ -1079,7 +1149,7 @@
 											: inViewport
 												? 'cursor-grab border-slate-300 shadow-sm transition hover:border-slate-400'
 												: 'cursor-grab border-amber-300 shadow-sm transition hover:border-amber-400'}"
-									style={`left: ${buttonLeft}px; top: ${buttonTop}px; width: ${CELL}px; height: ${CELL}px; background-color: ${button.background_color || DEFAULT_BUTTON_COLOR}; color: ${contrastingTextColor(button.background_color || DEFAULT_BUTTON_COLOR)};`}
+									style={`left: ${buttonLeft}px; top: ${buttonTop}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(button)}; color: ${contrastingTextColor(resolveButtonHex(button))};`}
 									onpointerdown={(event) => onButtonPointerDown(button, event)}
 									onpointermove={onButtonPointerMove}
 									onpointerup={onButtonPointerUp}
@@ -1141,18 +1211,42 @@
 								>Background</span
 							>
 							<div class="grid grid-cols-5 gap-2">
-								{#each FITZGERALD_COLORS as swatch (swatch.id)}
+								<button
+									type="button"
+									class="relative aspect-square rounded-lg border shadow-sm transition hover:scale-105 {selectedButton.background_color ===
+										null && selectedButton.palette_color_id === null
+										? 'border-blue-500 ring-2 ring-blue-500/40'
+										: 'border-slate-300'}"
+									style="background-color: #ffffff;"
+									title="None"
+									aria-label="None"
+									aria-pressed={selectedButton.background_color === null &&
+										selectedButton.palette_color_id === null}
+									onclick={selectNoneColor}
+								>
+									<span
+										class="pointer-events-none absolute inset-1 rounded-full border-2 border-slate-400"
+										aria-hidden="true"
+									></span>
+									<span
+										class="pointer-events-none absolute top-1/2 left-1/2 h-0.5 w-[120%] -translate-x-1/2 -translate-y-1/2 rotate-45 bg-slate-400"
+										aria-hidden="true"
+									></span>
+								</button>
+								{#each [...paletteColors].sort((a, b) => a.position - b.position) as swatch (swatch.id)}
 									<button
 										type="button"
-										class="aspect-square rounded-lg border shadow-sm transition hover:scale-105 {colorDraft.toLowerCase() ===
-										swatch.hex
+										class="aspect-square rounded-lg border shadow-sm transition hover:scale-105 {selectedButton.palette_color_id ===
+										swatch.id
 											? 'border-blue-500 ring-2 ring-blue-500/40'
 											: 'border-slate-300'}"
 										style={`background-color: ${swatch.hex};`}
-										title="{swatch.label} — {swatch.category}"
-										aria-label="{swatch.label}: {swatch.category}"
-										aria-pressed={colorDraft.toLowerCase() === swatch.hex}
-										onclick={() => updateSelectedColor(swatch.hex)}
+										title={swatch.name.trim()
+											? `${swatch.name}${swatch.description ? ` — ${swatch.description}` : ''}`
+											: swatch.hex}
+										aria-label={swatch.name.trim() || swatch.hex}
+										aria-pressed={selectedButton.palette_color_id === swatch.id}
+										onclick={() => selectPaletteColor(swatch.id)}
 									></button>
 								{/each}
 							</div>
@@ -1166,6 +1260,12 @@
 								/>
 								<span class="font-mono text-xs text-slate-500">{colorDraft}</span>
 							</label>
+							<a
+								href={`/vocabularies/${vocabularyId}/settings`}
+								class="inline-block text-sm font-medium text-blue-700 hover:underline"
+							>
+								Customize vocabulary palette
+							</a>
 						</div>
 
 						<ButtonActionEditor

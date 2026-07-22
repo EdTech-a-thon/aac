@@ -27,7 +27,8 @@ export type BoardButton = {
 	row_index: number;
 	col_index: number;
 	label: string;
-	background_color: string;
+	background_color: string | null;
+	palette_color_id: string | null;
 	action: ButtonAction | null;
 	created_at: string;
 	updated_at: string;

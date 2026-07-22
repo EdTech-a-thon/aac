@@ -37,7 +37,8 @@ type Button = {
   row_index: number;
   col_index: number;
   label: string;
-  background_color: string;
+  background_color: string | null;
+  palette_color_id: string | null;
   action: ButtonAction | null;
   created_at: string;
   updated_at: string;
@@ -283,7 +284,7 @@ vocabularyRoutes.get("/:id/boards/:boardId/buttons", async (c) => {
   const { data, error } = await supabase
     .from("buttons")
     .select(
-      "id, board_id, row_index, col_index, label, background_color, action, created_at, updated_at",
+      "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, created_at, updated_at",
     )
     .eq("board_id", boardId)
     .order("created_at", { ascending: true });
