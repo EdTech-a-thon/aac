@@ -4,7 +4,12 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+## Notes
+
+Wiped remote Vocabularies. Added `palette_colors` + `vocabularies.initial_snapshot`, seeded Fitzgerald-default Palette in `create_vocabulary`, and `GET /vocabularies/:id/palette-colors`. Settings page displays the live Palette (read-only until ticket 03).
+
 
 - [ ] All existing Vocabularies (and dependents) are deleted in local and linked remote/dev environments used for this project
 - [ ] Creating a Vocabulary stores an Initial Snapshot: empty Boards/Buttons + Fitzgerald-default Palette Colors

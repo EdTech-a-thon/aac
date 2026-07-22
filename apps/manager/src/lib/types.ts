@@ -33,6 +33,17 @@ export type BoardButton = {
 	updated_at: string;
 };
 
+export type PaletteColor = {
+	id: string;
+	vocabulary_id: string;
+	hex: string;
+	name: string;
+	description: string;
+	position: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export type Manager = {
 	userId: string;
 	email: string | null;

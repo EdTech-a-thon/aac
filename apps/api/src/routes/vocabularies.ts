@@ -18,6 +18,19 @@ type Board = {
   updated_at: string;
 };
 
+type ButtonAction =
+  | { kind: "insert_phrase"; phrase: string }
+  | { kind: "speak_immediately"; phrase: string }
+  | { kind: "open_board"; board_id: string }
+  | {
+      kind: "play_youtube_clip";
+      video_id: string;
+      start: number;
+      end: number;
+    }
+  | { kind: "clear_message_bar" }
+  | { kind: "backspace" };
+
 type Button = {
   id: string;
   board_id: string;
@@ -25,6 +38,18 @@ type Button = {
   col_index: number;
   label: string;
   background_color: string;
+  action: ButtonAction | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type PaletteColor = {
+  id: string;
+  vocabulary_id: string;
+  hex: string;
+  name: string;
+  description: string;
+  position: number;
   created_at: string;
   updated_at: string;
 };
@@ -202,6 +227,27 @@ vocabularyRoutes.get("/:id/boards", async (c) => {
   });
 });
 
+vocabularyRoutes.get("/:id/palette-colors", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+
+  const { data, error } = await supabase
+    .from("palette_colors")
+    .select(
+      "id, vocabulary_id, hex, name, description, position, created_at, updated_at",
+    )
+    .eq("vocabulary_id", id)
+    .order("position", { ascending: true });
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  return c.json({
+    paletteColors: data as PaletteColor[],
+  });
+});
+
 vocabularyRoutes.post("/:id/boards", (c) =>
   c.json({ error: CHANGE_SET_ONLY_MESSAGE }, 410),
 );
@@ -236,7 +282,9 @@ vocabularyRoutes.get("/:id/boards/:boardId/buttons", async (c) => {
 
   const { data, error } = await supabase
     .from("buttons")
-    .select("id, board_id, row_index, col_index, label, background_color, created_at, updated_at")
+    .select(
+      "id, board_id, row_index, col_index, label, background_color, action, created_at, updated_at",
+    )
     .eq("board_id", boardId)
     .order("created_at", { ascending: true });
 
