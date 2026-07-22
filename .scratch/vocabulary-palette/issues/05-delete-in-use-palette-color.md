@@ -4,7 +4,12 @@
 
 **Blocked by:** 03 — Edit Palette via Change Sets on vocabulary settings; 04 — Button color: None, Palette binding, or custom hex.
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+## Notes
+
+Unused Palette Color deletes immediately. In-use deletes open the two-step modal (reassign None/Palette/custom or freeze). Apply of `delete_palette_color` freezes any remaining bindings to custom hex so Suggested deletes are safe when Buttons bind later.
+
 
 - [ ] Deleting an unused Palette Color removes it without a resolution modal
 - [ ] Deleting an in-use Palette Color shows the agreed two-step modal (Button wording, not “tile”); resolution mutations are part of the same Change Set as the delete

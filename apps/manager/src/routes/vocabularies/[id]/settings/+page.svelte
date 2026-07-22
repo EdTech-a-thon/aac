@@ -3,13 +3,18 @@
 	import { getDashboard } from '$lib/dashboard';
 	import { apiFetch } from '$lib/auth';
 	import { normalizeHexColor } from '$lib/fitzgeraldColors';
+	import DeletePaletteColorModal, {
+		type BoundButtonPreview,
+		type DeleteResolution
+	} from '$lib/components/DeletePaletteColorModal.svelte';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
+		replaceEditorLiveFromServer,
 		replaceEditorPaletteFromServer,
 		subscribeEditorRevision
 	} from '$lib/vocabularyEditorSession';
-	import type { PaletteColor } from '$lib/types';
+	import type { Board, BoardButton, PaletteColor } from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
@@ -18,6 +23,10 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let formError = $state<string | null>(null);
+
+	let deleteOpen = $state(false);
+	let deleteTarget = $state<PaletteColor | null>(null);
+	let deleteBound = $state<BoundButtonPreview[]>([]);
 
 	$effect(() => subscribeEditorRevision(() => {
 		revision += 1;
@@ -29,6 +38,38 @@
 		return [...session.paletteColors].sort((a, b) => a.position - b.position);
 	});
 
+	async function hydrateEditor(id: string, accessToken: string) {
+		const current = getVocabularyEditorSession(id);
+		if (current.hydrated && current.paletteHydrated) return;
+
+		const [boardData, paletteData] = await Promise.all([
+			apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, { accessToken }),
+			apiFetch<{ paletteColors: PaletteColor[] }>(`/vocabularies/${id}/palette-colors`, {
+				accessToken
+			})
+		]);
+		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
+		await Promise.all(
+			boardData.boards.map(async (board) => {
+				const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
+					`/vocabularies/${id}/boards/${board.id}/buttons`,
+					{ accessToken }
+				);
+				nextButtonsByBoardId[board.id] = buttonData.buttons;
+			})
+		);
+		if (!current.hydrated) {
+			replaceEditorLiveFromServer(
+				current,
+				boardData.boards,
+				nextButtonsByBoardId,
+				paletteData.paletteColors
+			);
+		} else if (!current.paletteHydrated) {
+			replaceEditorPaletteFromServer(current, paletteData.paletteColors);
+		}
+	}
+
 	$effect(() => {
 		const id = vocabularyId;
 		const auth = dashboard.auth;
@@ -37,18 +78,9 @@
 		let cancelled = false;
 		(async () => {
 			error = null;
-			const current = getVocabularyEditorSession(id);
-			if (current.paletteHydrated) {
-				loading = false;
-				return;
-			}
 			loading = true;
 			try {
-				const data = await apiFetch<{ paletteColors: PaletteColor[] }>(
-					`/vocabularies/${id}/palette-colors`,
-					{ accessToken: auth.session.access_token }
-				);
-				if (!cancelled) replaceEditorPaletteFromServer(current, data.paletteColors);
+				await hydrateEditor(id, auth.session.access_token);
 			} catch (err) {
 				if (!cancelled) {
 					error = err instanceof Error ? err.message : 'Failed to load palette';
@@ -65,6 +97,28 @@
 
 	function setPaletteColors(next: PaletteColor[]) {
 		persistEditorSession(session, { paletteColors: next });
+	}
+
+	function setButtonsByBoardId(next: Record<string, BoardButton[]>) {
+		persistEditorSession(session, { buttonsByBoardId: next });
+	}
+
+	function buttonsBoundTo(paletteColorId: string): BoundButtonPreview[] {
+		revision;
+		const boardName = (boardId: string) => {
+			const board = session.boards.find((b) => b.id === boardId);
+			const name = board?.name?.trim();
+			return name ? name : 'Untitled';
+		};
+		const result: BoundButtonPreview[] = [];
+		for (const list of Object.values(session.buttonsByBoardId)) {
+			for (const button of list) {
+				if (button.palette_color_id === paletteColorId) {
+					result.push({ button, boardName: boardName(button.board_id) });
+				}
+			}
+		}
+		return result;
 	}
 
 	function updateColor(id: string, patch: Partial<Pick<PaletteColor, 'hex' | 'name' | 'description'>>) {
@@ -100,12 +154,72 @@
 		setPaletteColors([...paletteColors, color]);
 	}
 
-	function deleteColor(id: string) {
-		formError = null;
+	function removePaletteColor(id: string) {
 		const remaining = paletteColors
 			.filter((color) => color.id !== id)
 			.map((color, index) => ({ ...color, position: index }));
 		setPaletteColors(remaining);
+	}
+
+	function requestDeleteColor(id: string) {
+		formError = null;
+		const color = paletteColors.find((c) => c.id === id);
+		if (!color) return;
+		const bound = buttonsBoundTo(id);
+		if (bound.length === 0) {
+			removePaletteColor(id);
+			return;
+		}
+		deleteTarget = color;
+		deleteBound = bound;
+		deleteOpen = true;
+	}
+
+	function applyBoundResolution(resolution: DeleteResolution) {
+		if (!deleteTarget) return;
+		const colorId = deleteTarget.id;
+		const freezeHex = deleteTarget.hex;
+		const now = new Date().toISOString();
+		const nextButtons: Record<string, BoardButton[]> = {};
+		for (const [boardId, list] of Object.entries(session.buttonsByBoardId)) {
+			nextButtons[boardId] = list.map((button) => {
+				if (button.palette_color_id !== colorId) return button;
+				if (resolution.kind === 'freeze') {
+					return {
+						...button,
+						palette_color_id: null,
+						background_color: freezeHex,
+						updated_at: now
+					};
+				}
+				if (resolution.kind === 'none') {
+					return {
+						...button,
+						palette_color_id: null,
+						background_color: null,
+						updated_at: now
+					};
+				}
+				if (resolution.kind === 'palette') {
+					return {
+						...button,
+						palette_color_id: resolution.paletteColorId,
+						background_color: null,
+						updated_at: now
+					};
+				}
+				return {
+					...button,
+					palette_color_id: null,
+					background_color: resolution.hex,
+					updated_at: now
+				};
+			});
+		}
+		setButtonsByBoardId(nextButtons);
+		removePaletteColor(colorId);
+		deleteTarget = null;
+		deleteBound = [];
 	}
 
 	function moveColor(id: string, direction: -1 | 1) {
@@ -207,7 +321,7 @@
 									<button
 										type="button"
 										class="rounded border border-red-200 px-2 py-1 text-sm text-red-700 hover:bg-red-50"
-										onclick={() => deleteColor(color.id)}
+										onclick={() => requestDeleteColor(color.id)}
 									>
 										Delete
 									</button>
@@ -232,3 +346,15 @@
 		{/if}
 	</section>
 </div>
+
+<DeletePaletteColorModal
+	bind:open={deleteOpen}
+	color={deleteTarget}
+	boundButtons={deleteBound}
+	otherPaletteColors={paletteColors.filter((c) => c.id !== deleteTarget?.id)}
+	onConfirm={applyBoundResolution}
+	onCancel={() => {
+		deleteTarget = null;
+		deleteBound = [];
+	}}
+/>
