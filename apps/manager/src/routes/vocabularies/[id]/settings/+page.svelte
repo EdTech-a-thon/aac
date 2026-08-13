@@ -7,6 +7,7 @@
 		type BoundButtonPreview,
 		type DeleteResolution
 	} from '$lib/components/DeletePaletteColorModal.svelte';
+	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
@@ -233,19 +234,24 @@
 	}
 </script>
 
-<div class="flex h-full flex-col gap-4 overflow-auto p-6">
-	<div>
-		<a
-			href={`/vocabularies/${vocabularyId}`}
-			class="text-sm font-medium text-blue-700 hover:underline"
-		>
-			← Back to boards
-		</a>
-		<h1 class="mt-3 text-2xl font-semibold text-slate-900">Settings</h1>
-		<p class="mt-1 text-sm text-slate-600">
-			Edit this Vocabulary’s Palette. Changes join the same unsaved Change Set as board edits —
-			use Submit / Suggest at the bottom.
-		</p>
+<div class="flex h-full min-h-0 flex-1 flex-col gap-4 overflow-auto p-6">
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div>
+			<a
+				href={`/vocabularies/${vocabularyId}`}
+				class="text-sm font-medium text-blue-700 hover:underline"
+			>
+				← Back to boards
+			</a>
+			<h1 class="mt-3 text-2xl font-semibold text-slate-900">Settings</h1>
+			<p class="mt-1 text-sm text-slate-600">
+				Edit this Vocabulary’s Palette. Changes join the same unsaved set as board edits — use
+				Save / Suggest in the header.
+			</p>
+		</div>
+		{#if dashboard.auth}
+			<VocabularyChangeActions vocabularyId={vocabularyId} auth={dashboard.auth} />
+		{/if}
 	</div>
 
 	<section class="space-y-3">

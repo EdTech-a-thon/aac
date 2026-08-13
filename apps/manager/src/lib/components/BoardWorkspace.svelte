@@ -4,7 +4,9 @@
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { apiFetch, type AuthState } from '$lib/auth';
+	import { cellRef, columnLetter, rowNumber } from '$lib/boardCellRef';
 	import { actionsEqual, type ButtonAction } from '$lib/buttonAction';
+	import { normalizeSuggestedChangeSets } from '$lib/describeChangeSetMutations';
 	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
@@ -15,7 +17,8 @@
 		getVocabularyEditorSession,
 		persistEditorSession,
 		replaceEditorLiveFromServer,
-		subscribeEditorRevision
+		subscribeEditorRevision,
+		type SuggestedChangeSet
 	} from '$lib/vocabularyEditorSession';
 
 	let {
@@ -28,6 +31,7 @@
 
 	const CELL = 96;
 	const GAP = 8;
+	const LABEL_GUTTER = 28;
 	const MIN_ZOOM = 0.15;
 	const MAX_ZOOM = 4;
 
@@ -174,13 +178,15 @@
 			? selectedBoard.height * CELL + Math.max(0, selectedBoard.height - 1) * GAP
 			: 0
 	);
+	const boardContentWidth = $derived(boardPixelWidth + LABEL_GUTTER);
+	const boardContentHeight = $derived(boardPixelHeight + LABEL_GUTTER);
 
 	const boardFramePad = BOARD_PAD * 2;
 
 	const isBoardOffscreen = $derived.by(() => {
 		if (!selectedBoard || canvasWidth <= 0 || canvasHeight <= 0) return false;
-		const frameW = (boardPixelWidth + boardFramePad) * zoom;
-		const frameH = (boardPixelHeight + boardFramePad) * zoom;
+		const frameW = (boardContentWidth + boardFramePad) * zoom;
+		const frameH = (boardContentHeight + boardFramePad) * zoom;
 		const left = panX;
 		const top = panY;
 		const right = left + frameW;
@@ -218,12 +224,12 @@
 		// Bounds in the transformed board-frame's local space (origin = card top-left).
 		let minX = 0;
 		let minY = 0;
-		let maxX = boardPixelWidth + boardFramePad;
-		let maxY = boardPixelHeight + boardFramePad;
+		let maxX = boardContentWidth + boardFramePad;
+		let maxY = boardContentHeight + boardFramePad;
 
 		for (const button of buttons) {
-			const left = BOARD_PAD + cellLeft(button.col_index);
-			const top = BOARD_PAD + cellTop(button.row_index);
+			const left = BOARD_PAD + LABEL_GUTTER + cellLeft(button.col_index);
+			const top = BOARD_PAD + LABEL_GUTTER + cellTop(button.row_index);
 			minX = Math.min(minX, left);
 			minY = Math.min(minY, top);
 			maxX = Math.max(maxX, left + CELL);
@@ -255,13 +261,14 @@
 
 			async function refreshSuggested() {
 				try {
-					const suggested = await apiFetch<{
-						changeSets: import('$lib/vocabularyEditorSession').SuggestedChangeSet[];
-					}>(`/vocabularies/${id}/change-sets?status=suggested`, {
-						accessToken: token
-					});
+					const suggested = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
+						`/vocabularies/${id}/change-sets?status=suggested`,
+						{ accessToken: token }
+					);
 					if (!cancelled) {
-						persistEditorSession(current, { suggestedChangeSets: suggested.changeSets });
+						persistEditorSession(current, {
+							suggestedChangeSets: normalizeSuggestedChangeSets(suggested.changeSets)
+						});
 					}
 				} catch {
 					if (!cancelled) {
@@ -557,7 +564,10 @@
 		const rect = el.getBoundingClientRect();
 		const worldX = (clientX - rect.left - panX) / zoom;
 		const worldY = (clientY - rect.top - panY) / zoom;
-		return { x: worldX - BOARD_PAD, y: worldY - BOARD_PAD };
+		return {
+			x: worldX - BOARD_PAD - LABEL_GUTTER,
+			y: worldY - BOARD_PAD - LABEL_GUTTER
+		};
 	}
 
 	function pointerToCell(clientX: number, clientY: number) {
@@ -1071,13 +1081,41 @@
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
 						class="pointer-events-auto relative rounded-2xl border border-slate-300 bg-white p-3 shadow-xl"
-						style={`width: ${boardPixelWidth + 24}px; height: ${boardPixelHeight + 24}px;`}
+						style={`width: ${boardContentWidth + 24}px; height: ${boardContentHeight + 24}px;`}
 						onclick={(event) => {
 							event.stopPropagation();
 							clearSelection();
 						}}
 					>
-						<div class="relative" style={`width: ${boardPixelWidth}px; height: ${boardPixelHeight}px;`}>
+						<div
+							class="relative"
+							style={`width: ${boardContentWidth}px; height: ${boardContentHeight}px;`}
+						>
+							{#if selectedBoard}
+								{#each Array.from({ length: selectedBoard.width }, (_, col) => col) as col (col)}
+									<div
+										class="pointer-events-none absolute flex items-end justify-center pb-1 text-xs font-semibold text-slate-500"
+										style={`left: ${LABEL_GUTTER + cellLeft(col)}px; top: 0; width: ${CELL}px; height: ${LABEL_GUTTER}px;`}
+										aria-hidden="true"
+									>
+										{columnLetter(col)}
+									</div>
+								{/each}
+								{#each Array.from({ length: selectedBoard.height }, (_, row) => row) as row (row)}
+									<div
+										class="pointer-events-none absolute flex items-center justify-end pr-1.5 text-xs font-semibold text-slate-500"
+										style={`left: 0; top: ${LABEL_GUTTER + cellTop(row)}px; width: ${LABEL_GUTTER}px; height: ${CELL}px;`}
+										aria-hidden="true"
+									>
+										{rowNumber(row)}
+									</div>
+								{/each}
+							{/if}
+
+							<div
+								class="absolute"
+								style={`left: ${LABEL_GUTTER}px; top: ${LABEL_GUTTER}px; width: ${boardPixelWidth}px; height: ${boardPixelHeight}px;`}
+							>
 							{#each viewportCells as cell (`${cell.row}:${cell.col}`)}
 								{@const occupying = buttonAtCell.get(`${cell.row}:${cell.col}`)}
 								{@const isDragOrigin =
@@ -1086,7 +1124,7 @@
 									type="button"
 									class="group absolute flex items-center justify-center rounded-lg bg-slate-200/90 hover:bg-slate-300 active:bg-slate-400"
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
-									aria-label={`Empty cell at row ${cell.row}, column ${cell.col}`}
+									aria-label={`Empty cell ${cellRef(cell.row, cell.col)}`}
 									disabled={Boolean(occupying && !isDragOrigin) || Boolean(drag?.active)}
 									onclick={(event) => {
 										event.stopPropagation();
@@ -1151,6 +1189,7 @@
 												? 'cursor-grab border-slate-300 shadow-sm transition hover:border-slate-400'
 												: 'cursor-grab border-amber-300 shadow-sm transition hover:border-amber-400'}"
 									style={`left: ${buttonLeft}px; top: ${buttonTop}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(button)}; color: ${contrastingTextColor(resolveButtonHex(button))};`}
+									aria-label={`${button.label.trim() || 'Untitled button'} at ${cellRef(button.row_index, button.col_index)}`}
 									onpointerdown={(event) => onButtonPointerDown(button, event)}
 									onpointermove={onButtonPointerMove}
 									onpointerup={onButtonPointerUp}
@@ -1162,6 +1201,7 @@
 									</span>
 								</button>
 							{/each}
+							</div>
 						</div>
 					</div>
 				</div>

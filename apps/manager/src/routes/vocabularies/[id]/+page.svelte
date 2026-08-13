@@ -4,6 +4,7 @@
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import BoardWorkspace from '$lib/components/BoardWorkspace.svelte';
+	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
 	import { getDashboard } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth } from '$lib/auth';
 	import type { Manager, Vocabulary } from '$lib/types';
@@ -180,7 +181,7 @@
 		</p>
 	</div>
 {:else}
-	<div class="grid h-full grid-rows-[auto_1fr]">
+	<div class="grid h-full min-h-0 grid-rows-[auto_1fr]">
 		<header
 			class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm"
 		>
@@ -210,6 +211,10 @@
 			>
 				Share
 			</button>
+
+			{#if dashboard.auth}
+				<VocabularyChangeActions vocabularyId={vocabularyId} auth={dashboard.auth} />
+			{/if}
 
 			<Menu>
 				{#snippet trigger({ toggle })}
@@ -245,7 +250,7 @@
 			</Menu>
 		</header>
 
-		<div class="flex h-full min-h-0 flex-col overflow-hidden">
+<div class="flex h-full min-h-0 flex-col overflow-hidden">
 			{#if error}
 				<p class="m-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
 			{/if}

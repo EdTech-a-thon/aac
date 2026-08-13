@@ -3,10 +3,12 @@
 
 	let {
 		align = 'right',
+		drop = 'down',
 		children,
 		trigger
 	}: {
 		align?: 'left' | 'right' | 'center';
+		drop?: 'down' | 'up';
 		children: Snippet<[{ close: () => void }]>;
 		trigger: Snippet<[{ toggle: () => void; open: boolean }]>;
 	} = $props();
@@ -48,8 +50,10 @@
 	{@render trigger({ toggle, open })}
 	{#if open}
 		<div
-			class="absolute z-30 mt-1 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg {align ===
-			'right'
+			class="absolute z-30 min-w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg {drop ===
+			'up'
+				? 'bottom-full mb-1'
+				: 'top-full mt-1'} {align === 'right'
 				? 'right-0'
 				: align === 'center'
 					? 'left-1/2 -translate-x-1/2'

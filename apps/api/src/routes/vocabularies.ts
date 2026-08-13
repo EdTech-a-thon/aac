@@ -337,7 +337,48 @@ vocabularyRoutes.get("/:id/change-sets", async (c) => {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
-  return c.json({ changeSets: data as ChangeSet[] });
+  const changeSets = (data ?? []) as ChangeSet[];
+  const authorIds = [
+    ...new Set(
+      changeSets
+        .map((cs) => cs.author_id)
+        .filter((authorId): authorId is string => Boolean(authorId)),
+    ),
+  ];
+
+  const profileById = new Map<string, { email: string | null; name: string | null }>();
+  if (authorIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, email, name")
+      .in("id", authorIds);
+
+    if (profilesError) {
+      return c.json({ error: pgErrorMessage(profilesError) }, 400);
+    }
+
+    for (const profile of (profiles ?? []) as {
+      id: string;
+      email: string | null;
+      name: string | null;
+    }[]) {
+      profileById.set(profile.id, {
+        email: profile.email ?? null,
+        name: profile.name ?? null,
+      });
+    }
+  }
+
+  return c.json({
+    changeSets: changeSets.map((cs) => {
+      const profile = cs.author_id ? profileById.get(cs.author_id) : undefined;
+      return {
+        ...cs,
+        author_name: profile?.name ?? null,
+        author_email: profile?.email ?? null,
+      };
+    }),
+  });
 });
 
 vocabularyRoutes.post("/:id/change-sets", async (c) => {

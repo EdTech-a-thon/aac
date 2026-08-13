@@ -11,9 +11,11 @@ import type { Board, BoardButton, PaletteColor } from './types';
 export type SuggestedChangeSet = {
 	id: string;
 	status: 'suggested';
-	mutations: unknown[];
+	mutations: ChangeSetMutation[];
 	created_at: string;
 	author_id: string | null;
+	author_name?: string | null;
+	author_email?: string | null;
 };
 
 export type VocabularyEditorSession = {
