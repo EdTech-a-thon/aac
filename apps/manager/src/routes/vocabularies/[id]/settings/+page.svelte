@@ -122,19 +122,23 @@
 		return result;
 	}
 
-	function updateColor(id: string, patch: Partial<Pick<PaletteColor, 'hex' | 'name' | 'description'>>) {
+	function updateColor(
+		id: string,
+		patch: Partial<Pick<PaletteColor, 'hex' | 'name' | 'description'>>
+	): boolean {
 		formError = null;
 		if (patch.hex !== undefined) {
 			const normalized = normalizeHexColor(patch.hex);
 			if (!normalized) {
 				formError = 'Color must be a hex value like #RRGGBB.';
-				return;
+				return false;
 			}
 			patch = { ...patch, hex: normalized };
 		}
 		setPaletteColors(
 			paletteColors.map((color) => (color.id === id ? { ...color, ...patch } : color))
 		);
+		return true;
 	}
 
 	function addColor() {
@@ -254,17 +258,8 @@
 		{/if}
 	</div>
 
-	<section class="space-y-3">
-		<div class="flex items-center justify-between gap-3">
-			<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Palette</h2>
-			<button
-				type="button"
-				class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-				onclick={addColor}
-			>
-				Add color
-			</button>
-		</div>
+	<section class="max-w-4xl space-y-3">
+		<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Palette</h2>
 
 		{#if loading}
 			<p class="text-sm text-slate-500">Loading palette…</p>
@@ -274,81 +269,162 @@
 			{#if formError}
 				<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>
 			{/if}
-			{#if paletteColors.length === 0}
-				<p class="text-sm text-slate-500">No Palette Colors yet. Add one to get started.</p>
-			{:else}
-				<ul class="space-y-3">
-					{#each paletteColors as color (color.id)}
-						<li class="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-							<div class="flex flex-wrap items-start gap-3">
-								<label class="block space-y-1">
-									<span class="text-xs font-medium text-slate-500">Color</span>
-									<input
-										type="color"
-										class="h-10 w-14 cursor-pointer rounded border border-slate-300 bg-white p-1"
-										value={color.hex}
-										onchange={(event) =>
-											updateColor(color.id, {
-												hex: (event.currentTarget as HTMLInputElement).value
-											})}
-									/>
-								</label>
-								<label class="min-w-[10rem] flex-1 space-y-1">
-									<span class="text-xs font-medium text-slate-500">Name</span>
-									<input
-										class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-										value={color.name}
-										placeholder="e.g. Nouns"
-										oninput={(event) =>
-											updateColor(color.id, {
-												name: (event.currentTarget as HTMLInputElement).value
-											})}
-									/>
-								</label>
-								<div class="flex items-center gap-1 pt-5">
+
+			<div class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+				<table class="w-full table-fixed border-collapse text-left text-sm">
+					<colgroup>
+						<col class="w-12" />
+						<col class="w-44" />
+						<col class="w-[22%]" />
+						<col />
+						<col class="w-24" />
+					</colgroup>
+					<thead class="border-b border-slate-200 bg-slate-50 text-xs font-medium tracking-wide text-slate-500 uppercase">
+						<tr>
+							<th class="px-3 py-2.5 font-medium" scope="col">
+								<span class="sr-only">Reorder</span>
+							</th>
+							<th class="px-3 py-2.5 font-medium" scope="col">Color</th>
+							<th class="px-3 py-2.5 font-medium" scope="col">Name</th>
+							<th class="px-3 py-2.5 font-medium" scope="col">Description</th>
+							<th class="px-3 py-2.5 font-medium" scope="col">
+								<span class="sr-only">Actions</span>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if paletteColors.length === 0}
+							<tr>
+								<td class="px-6 py-16 text-center" colspan="5">
+									<p class="text-sm font-medium text-slate-700">No colors in this palette</p>
+									<p class="mt-1 text-sm text-slate-500">
+										Add a color to use it on board buttons.
+									</p>
 									<button
 										type="button"
-										class="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-										disabled={color.position === 0}
-										onclick={() => moveColor(color.id, -1)}
-										aria-label="Move up"
+										class="mt-4 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700"
+										onclick={addColor}
 									>
-										↑
+										Add color
 									</button>
+								</td>
+							</tr>
+						{:else}
+							{#each paletteColors as color (color.id)}
+								<tr class="border-t border-slate-100 first:border-t-0 hover:bg-slate-50/70">
+									<td class="px-2 py-2 align-middle">
+										<div class="flex flex-col items-center gap-0.5">
+											<button
+												type="button"
+												class="rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30"
+												disabled={color.position === 0}
+												onclick={() => moveColor(color.id, -1)}
+												aria-label="Move up"
+											>
+												↑
+											</button>
+											<button
+												type="button"
+												class="rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-30"
+												disabled={color.position === paletteColors.length - 1}
+												onclick={() => moveColor(color.id, 1)}
+												aria-label="Move down"
+											>
+												↓
+											</button>
+										</div>
+									</td>
+									<td class="px-3 py-2 align-middle">
+										<div class="flex items-center gap-2">
+											<label class="relative size-8 shrink-0 overflow-hidden rounded-md border border-slate-300 shadow-sm">
+												<span class="sr-only">Color</span>
+												<input
+													type="color"
+													class="absolute inset-0 size-full cursor-pointer opacity-0"
+													value={color.hex}
+													onchange={(event) =>
+														updateColor(color.id, {
+															hex: (event.currentTarget as HTMLInputElement).value
+														})}
+												/>
+												<span
+													class="pointer-events-none block size-full"
+													style={`background-color: ${color.hex};`}
+												></span>
+											</label>
+											<input
+												class="min-w-0 flex-1 bg-transparent font-mono text-xs text-slate-500 outline-none focus:text-slate-800"
+												value={color.hex}
+												spellcheck="false"
+												aria-label="Hex color"
+												onblur={(event) => {
+													const input = event.currentTarget as HTMLInputElement;
+													if (input.value === color.hex) return;
+													if (!updateColor(color.id, { hex: input.value })) {
+														input.value = color.hex;
+													}
+												}}
+											/>
+										</div>
+									</td>
+									<td class="px-3 py-2 align-middle">
+										<label class="block">
+											<span class="sr-only">Name</span>
+											<input
+												class="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+												value={color.name}
+												placeholder="e.g. Nouns"
+												oninput={(event) =>
+													updateColor(color.id, {
+														name: (event.currentTarget as HTMLInputElement).value
+													})}
+											/>
+										</label>
+									</td>
+									<td class="px-3 py-2 align-middle">
+										<label class="block">
+											<span class="sr-only">Description</span>
+											<input
+												class="w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+												value={color.description}
+												placeholder="When to choose this color"
+												oninput={(event) =>
+													updateColor(color.id, {
+														description: (event.currentTarget as HTMLInputElement).value
+													})}
+											/>
+										</label>
+									</td>
+									<td class="px-3 py-2 align-middle">
+										<button
+											type="button"
+											class="rounded-md px-2 py-1 text-sm text-red-700 transition hover:bg-red-50"
+											onclick={() => requestDeleteColor(color.id)}
+										>
+											Delete
+										</button>
+									</td>
+								</tr>
+							{/each}
+						{/if}
+					</tbody>
+					{#if paletteColors.length > 0}
+						<tfoot>
+							<tr class="border-t border-slate-200">
+								<td class="p-2" colspan="5">
 									<button
 										type="button"
-										class="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-										disabled={color.position === paletteColors.length - 1}
-										onclick={() => moveColor(color.id, 1)}
-										aria-label="Move down"
+										class="w-full rounded-md border border-dashed border-slate-300 px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+										onclick={addColor}
 									>
-										↓
+										+ Add color
 									</button>
-									<button
-										type="button"
-										class="rounded border border-red-200 px-2 py-1 text-sm text-red-700 hover:bg-red-50"
-										onclick={() => requestDeleteColor(color.id)}
-									>
-										Delete
-									</button>
-								</div>
-							</div>
-							<label class="mt-3 block space-y-1">
-								<span class="text-xs font-medium text-slate-500">Description</span>
-								<textarea
-									class="min-h-[4rem] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-									value={color.description}
-									placeholder="When to choose this color"
-									oninput={(event) =>
-										updateColor(color.id, {
-											description: (event.currentTarget as HTMLTextAreaElement).value
-										})}
-								></textarea>
-							</label>
-						</li>
-					{/each}
-				</ul>
-			{/if}
+								</td>
+							</tr>
+						</tfoot>
+					{/if}
+				</table>
+			</div>
 		{/if}
 	</section>
 </div>
