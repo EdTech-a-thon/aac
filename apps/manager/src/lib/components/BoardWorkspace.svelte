@@ -931,8 +931,9 @@
 	}
 </script>
 
-<div class="grid h-full min-h-0 grid-rows-[auto_1fr_auto]">
-	<div class="relative z-20 flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+<div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+	<div>
+		<div class="relative z-20 flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
 		{#if loadingBoards}
 			<p class="text-sm text-slate-500">Loading boards…</p>
 		{:else if boards.length === 0}
@@ -1025,14 +1026,14 @@
 				{/snippet}
 			</Menu>
 		{/if}
+		</div>
+		{#if error}
+			<p class="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+		{/if}
 	</div>
 
-	{#if error}
-		<p class="mx-4 mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-	{/if}
-
 	{#if selectedBoard}
-		<div class="grid min-h-0 grid-cols-[1fr_18rem]">
+		<div class="grid h-full min-h-0 grid-cols-[1fr_18rem] grid-rows-[minmax(0,1fr)]">
 			<!-- Canvas -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div

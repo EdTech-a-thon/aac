@@ -245,12 +245,14 @@
 			</Menu>
 		</header>
 
-		<div class="min-h-0 overflow-hidden">
+		<div class="flex h-full min-h-0 flex-col overflow-hidden">
 			{#if error}
 				<p class="m-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
 			{/if}
 			{#if dashboard.auth}
-				<BoardWorkspace vocabularyId={vocabulary.id} auth={dashboard.auth} />
+				<div class="min-h-0 flex-1">
+					<BoardWorkspace vocabularyId={vocabulary.id} auth={dashboard.auth} />
+				</div>
 			{/if}
 		</div>
 	</div>

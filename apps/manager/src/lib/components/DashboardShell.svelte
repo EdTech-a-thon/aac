@@ -283,7 +283,7 @@
 		</div>
 	</aside>
 
-	<main class="min-h-0 overflow-auto bg-slate-50">
+	<main class="flex min-h-0 flex-col overflow-auto bg-slate-50">
 		{@render children()}
 	</main>
 </div>

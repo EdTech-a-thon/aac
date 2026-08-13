@@ -9,7 +9,7 @@
 	const vocabularyId = $derived(page.params.id ?? '');
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
+<div class="flex h-full min-h-0 flex-1 flex-col">
 	<div class="min-h-0 flex-1 overflow-hidden">
 		{@render children()}
 	</div>
