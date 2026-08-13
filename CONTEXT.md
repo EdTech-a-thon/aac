@@ -9,7 +9,7 @@ A person with an Auth account (email/password). Not split into separate account 
 _Avoid_: Manager account, AAC User account, role-as-account-type
 
 **Vocabulary**:
-A curated collection of Boards that Users can manage and/or use, via separate relationships. Has a name, which may be blank (shown as an Untitled placeholder in the UI). Has exactly one Palette. Created with an Initial Snapshot of its Boards, Buttons, and Palette. Board order and which Board is entered first are unspecified for now. Deleting a Vocabulary removes its Boards, Buttons, Palette, Initial Snapshot, Change Sets, and Management/Usage relationships with it.
+A curated collection of Boards that Users can manage and/or use, via separate relationships. It appears in the manager app only for its Managers, and in the AAC app only for its Communicators. Has a name, which may be blank (shown as an Untitled placeholder in the UI). Has exactly one Palette. Created with an Initial Snapshot of its Boards, Buttons, and Palette. Board order and which Board is entered first are unspecified for now. Deleting a Vocabulary removes its Boards, Buttons, Palette, Initial Snapshot, Change Sets, and Management/Usage relationships with it.
 _Avoid_: Page set, word list
 
 **Initial Snapshot**:
@@ -45,12 +45,16 @@ A many-to-many link between a User and a Vocabulary granting permission to confi
 _Avoid_: Ownership (for this relationship), editor, vocabulary editor, pending invite (for now)
 
 **Usage relationship**:
-A many-to-many link between a User and a Vocabulary granting permission to communicate with that vocabulary (what the app shows). Independent of Management; creating a Vocabulary does not create a Usage relationship.
+A many-to-many link between a User and a Vocabulary granting permission to communicate with that vocabulary (what the app shows): read the live Vocabulary (Boards, Buttons, Palette as reconstructed from Initial Snapshot plus Applied Change Sets), perform Actions, and use the Message Bar. Not Suggested Change Sets, Applied history, or any durable writes. Independent of Management: a User may hold both relationships to the same Vocabulary; creating a Vocabulary does not create a Usage relationship. Communicators can be added by an existing Manager supplying another User's email; if no User has that email, the add fails. Communicators cannot add Usage relationships. Managers can remove Usage relationships, including the last one; Communicators cannot, including their own. A Vocabulary may have zero Communicators. Managers of a Vocabulary can see its Communicators. A Communicator can see their own Usage relationship, not other Communicators or the Managers.
 _Avoid_: Assignment, subscription
 
 **Manager** (role via relationship):
 A User acting through a Management relationship to a Vocabulary — not a separate kind of account. Managing a Vocabulary means managing all of its Boards.
 _Avoid_: Caregiver, clinician, admin (as account types), editor, board editor, board manager, vocabulary editor
+
+**Communicator** (role via relationship):
+A User acting through a Usage relationship to a Vocabulary — not a separate kind of account. Communicating with a Vocabulary means using the live Vocabulary in the AAC app.
+_Avoid_: AAC User (as a role name), client, speaker, end user
 
 **Change Set**:
 A submitted collection of mutations to a Vocabulary's Boards, Buttons, and/or Palette. Belongs to exactly one Vocabulary; it does not outlive that Vocabulary. Has an author: the User who submitted it. Only a Manager of that Vocabulary may submit a Change Set, as Applied or as Suggested — non-Managers cannot submit Change Sets. Does not include Vocabulary name changes, Management/Usage relationship changes, or changes to the Initial Snapshot — those stay outside Change Sets (the Initial Snapshot is fixed at creation). Each Change Set has a status: **Applied** (its mutations are part of the live Vocabulary) or **Suggested** (saved, not yet applied). Applying a Change Set is the only durable way Boards, Buttons, or Palette Colors are created, updated, or deleted after creation. Submitting as Applied applies immediately and appends that Change Set to the Vocabulary's Applied history. Applying a Suggested Change Set flips that same Change Set to Applied and appends it as the new tip of the Applied history; any Manager of that Vocabulary may apply it. Any Manager may delete a Suggested Change Set without applying it. Applied Change Sets for a Vocabulary form an ordered, permanent history (for the life of the Vocabulary); the live Boards, Buttons, and Palette are always reconstructable from the Initial Snapshot plus that sequence. Suggested Change Sets are not part of that permanent history — they may be updated or deleted when an Applied Change Set lands and they are no longer meaningful (including deletion when nothing in them would do anything anymore). The exact update rules for Suggested Change Sets are unspecified for now. Suggested Change Sets are not tied to a specific point in the Applied history. “Suggestion” means a Change Set with Suggested status — not a separate concept.

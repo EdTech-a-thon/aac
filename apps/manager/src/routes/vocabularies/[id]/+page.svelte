@@ -7,7 +7,7 @@
 	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
 	import { getDashboard } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth } from '$lib/auth';
-	import type { Manager, Vocabulary } from '$lib/types';
+	import type { Communicator, Manager, Vocabulary } from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
@@ -15,13 +15,16 @@
 	let vocabulary = $state<Vocabulary | null>(null);
 	let nameDraft = $state('');
 	let managers = $state<Manager[]>([]);
+	let communicators = $state<Communicator[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let savingName = $state(false);
 
 	let shareOpen = $state(false);
 	let inviteEmail = $state('');
+	let inviteCommunicatorEmail = $state('');
 	let inviting = $state(false);
+	let invitingCommunicator = $state(false);
 	let shareError = $state<string | null>(null);
 	let shareMessage = $state<string | null>(null);
 
@@ -40,11 +43,14 @@
 			loading = true;
 			error = null;
 			try {
-				const [vocabData, managersData] = await Promise.all([
+				const [vocabData, managersData, communicatorsData] = await Promise.all([
 					apiFetch<{ vocabulary: Vocabulary }>(`/vocabularies/${id}`, {
 						accessToken: auth.session.access_token
 					}),
 					apiFetch<{ managers: Manager[] }>(`/vocabularies/${id}/managers`, {
+						accessToken: auth.session.access_token
+					}),
+					apiFetch<{ communicators: Communicator[] }>(`/vocabularies/${id}/communicators`, {
 						accessToken: auth.session.access_token
 					})
 				]);
@@ -52,6 +58,7 @@
 				vocabulary = vocabData.vocabulary;
 				nameDraft = vocabData.vocabulary.name;
 				managers = managersData.managers;
+				communicators = communicatorsData.communicators;
 			} catch (err) {
 				if (cancelled) return;
 				if (err instanceof ApiError && err.status === 401) {
@@ -104,6 +111,7 @@
 
 	function openShare() {
 		inviteEmail = '';
+		inviteCommunicatorEmail = '';
 		shareError = null;
 		shareMessage = null;
 		shareOpen = true;
@@ -147,6 +155,47 @@
 			shareMessage = 'Manager removed.';
 		} catch (err) {
 			shareError = err instanceof Error ? err.message : 'Failed to remove manager';
+		}
+	}
+
+	async function inviteCommunicator(event: SubmitEvent) {
+		event.preventDefault();
+		if (!dashboard.auth || !vocabulary) return;
+		invitingCommunicator = true;
+		shareError = null;
+		shareMessage = null;
+		try {
+			const data = await apiFetch<{ communicators: Communicator[] }>(
+				`/vocabularies/${vocabulary.id}/communicators`,
+				{
+					method: 'POST',
+					accessToken: dashboard.auth.session.access_token,
+					body: JSON.stringify({ email: inviteCommunicatorEmail })
+				}
+			);
+			communicators = data.communicators;
+			inviteCommunicatorEmail = '';
+			shareMessage = 'Communicator added.';
+		} catch (err) {
+			shareError = err instanceof Error ? err.message : 'Failed to add communicator';
+		} finally {
+			invitingCommunicator = false;
+		}
+	}
+
+	async function removeCommunicator(userId: string) {
+		if (!dashboard.auth || !vocabulary) return;
+		shareError = null;
+		shareMessage = null;
+		try {
+			await apiFetch(`/vocabularies/${vocabulary.id}/communicators/${userId}`, {
+				method: 'DELETE',
+				accessToken: dashboard.auth.session.access_token
+			});
+			communicators = communicators.filter((c) => c.userId !== userId);
+			shareMessage = 'Communicator removed.';
+		} catch (err) {
+			shareError = err instanceof Error ? err.message : 'Failed to remove communicator';
 		}
 	}
 
@@ -264,46 +313,93 @@
 {/if}
 
 <Modal bind:open={shareOpen} title="Share vocabulary">
-	<div class="space-y-4">
-		<ul class="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
-			{#each managers as manager (manager.userId)}
-				<li class="flex items-center justify-between gap-3 px-3 py-2.5">
-					<div class="min-w-0">
-						<p class="truncate text-sm font-medium text-slate-800">
-							{manager.name ?? manager.email ?? manager.userId}
-						</p>
-						{#if manager.name && manager.email}
-							<p class="truncate text-sm text-slate-500">{manager.email}</p>
-						{/if}
-					</div>
-					<button
-						type="button"
-						class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-						disabled={managers.length <= 1}
-						onclick={() => removeManager(manager.userId)}
-					>
-						Remove
-					</button>
-				</li>
-			{/each}
-		</ul>
+	<div class="space-y-6">
+		<section class="space-y-3">
+			<h3 class="text-sm font-semibold text-slate-800">Managers</h3>
+			<ul class="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+				{#each managers as manager (manager.userId)}
+					<li class="flex items-center justify-between gap-3 px-3 py-2.5">
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium text-slate-800">
+								{manager.name ?? manager.email ?? manager.userId}
+							</p>
+							{#if manager.name && manager.email}
+								<p class="truncate text-sm text-slate-500">{manager.email}</p>
+							{/if}
+						</div>
+						<button
+							type="button"
+							class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+							disabled={managers.length <= 1}
+							onclick={() => removeManager(manager.userId)}
+						>
+							Remove
+						</button>
+					</li>
+				{/each}
+			</ul>
 
-		<form class="flex gap-2" onsubmit={inviteManager}>
-			<input
-				class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-				type="email"
-				placeholder="Invite by email"
-				required
-				bind:value={inviteEmail}
-			/>
-			<button
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-				type="submit"
-				disabled={inviting}
-			>
-				{inviting ? 'Adding…' : 'Add'}
-			</button>
-		</form>
+			<form class="flex gap-2" onsubmit={inviteManager}>
+				<input
+					class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+					type="email"
+					placeholder="Invite by email"
+					required
+					bind:value={inviteEmail}
+				/>
+				<button
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+					type="submit"
+					disabled={inviting}
+				>
+					{inviting ? 'Adding…' : 'Add'}
+				</button>
+			</form>
+		</section>
+
+		<section class="space-y-3">
+			<h3 class="text-sm font-semibold text-slate-800">Communicators</h3>
+			<ul class="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+				{#each communicators as communicator (communicator.userId)}
+					<li class="flex items-center justify-between gap-3 px-3 py-2.5">
+						<div class="min-w-0">
+							<p class="truncate text-sm font-medium text-slate-800">
+								{communicator.name ?? communicator.email ?? communicator.userId}
+							</p>
+							{#if communicator.name && communicator.email}
+								<p class="truncate text-sm text-slate-500">{communicator.email}</p>
+							{/if}
+						</div>
+						<button
+							type="button"
+							class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+							onclick={() => removeCommunicator(communicator.userId)}
+						>
+							Remove
+						</button>
+					</li>
+				{:else}
+					<li class="px-3 py-2.5 text-sm text-slate-500">No communicators yet.</li>
+				{/each}
+			</ul>
+
+			<form class="flex gap-2" onsubmit={inviteCommunicator}>
+				<input
+					class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+					type="email"
+					placeholder="Invite by email"
+					required
+					bind:value={inviteCommunicatorEmail}
+				/>
+				<button
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+					type="submit"
+					disabled={invitingCommunicator}
+				>
+					{invitingCommunicator ? 'Adding…' : 'Add'}
+				</button>
+			</form>
+		</section>
 
 		{#if shareMessage}
 			<p class="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">{shareMessage}</p>

@@ -51,3 +51,10 @@ export type Manager = {
 	name: string | null;
 	createdAt: string;
 };
+
+export type Communicator = {
+	userId: string;
+	email: string | null;
+	name: string | null;
+	createdAt: string;
+};

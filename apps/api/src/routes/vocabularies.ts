@@ -61,12 +61,45 @@ type ManagerProfile = {
   name: string | null;
 };
 
-type ManagerRow = {
+type RelationshipRow = {
   vocabulary_id: string;
   user_id: string;
   created_at: string;
   profiles: ManagerProfile | ManagerProfile[] | null;
 };
+
+function relationshipMembers(data: RelationshipRow[] | null) {
+  return (data ?? []).map((row) => {
+    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return {
+      userId: row.user_id,
+      email: profile?.email ?? null,
+      name: profile?.name ?? null,
+      createdAt: row.created_at,
+    };
+  });
+}
+
+async function requireVocabularyManager(
+  supabase: AuthVariables["supabase"],
+  userId: string,
+  vocabularyId: string,
+) {
+  const { data, error } = await supabase
+    .from("vocabulary_managers")
+    .select("user_id")
+    .eq("vocabulary_id", vocabularyId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false as const, error: pgErrorMessage(error) };
+  }
+  if (!data) {
+    return { ok: false as const, error: "Not a manager of this vocabulary" };
+  }
+  return { ok: true as const };
+}
 
 type ChangeSet = {
   id: string;
@@ -464,17 +497,7 @@ vocabularyRoutes.get("/:id/managers", async (c) => {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
-  const managers = (data as ManagerRow[]).map((row) => {
-    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-    return {
-      userId: row.user_id,
-      email: profile?.email ?? null,
-      name: profile?.name ?? null,
-      createdAt: row.created_at,
-    };
-  });
-
-  return c.json({ managers });
+  return c.json({ managers: relationshipMembers(data as RelationshipRow[]) });
 });
 
 vocabularyRoutes.post("/:id/managers", async (c) => {
@@ -508,17 +531,79 @@ vocabularyRoutes.post("/:id/managers", async (c) => {
     return c.json({ error: pgErrorMessage(listError) }, 400);
   }
 
-  const managers = (data as ManagerRow[]).map((row) => {
-    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
-    return {
-      userId: row.user_id,
-      email: profile?.email ?? null,
-      name: profile?.name ?? null,
-      createdAt: row.created_at,
-    };
+  return c.json({ managers: relationshipMembers(data as RelationshipRow[]) }, 201);
+});
+
+vocabularyRoutes.get("/:id/communicators", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) {
+    return c.json({ error: managed.error }, 400);
+  }
+
+  const { data, error } = await supabase
+    .from("vocabulary_users")
+    .select("vocabulary_id, user_id, created_at, profiles(id, email, name)")
+    .eq("vocabulary_id", id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  return c.json({ communicators: relationshipMembers(data as RelationshipRow[]) });
+});
+
+vocabularyRoutes.post("/:id/communicators", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const body = await c.req.json<{ email?: string }>().catch((): { email?: string } => ({}));
+  const email = body.email?.trim();
+
+  if (!email) {
+    return c.json({ error: "Email is required" }, 400);
+  }
+
+  const { error } = await supabase.rpc("add_vocabulary_communicator", {
+    p_vocabulary_id: id,
+    p_email: email,
   });
 
-  return c.json({ managers }, 201);
+  if (error) {
+    const message = pgErrorMessage(error);
+    const status = message.toLowerCase().includes("no user found") ? 404 : 400;
+    return c.json({ error: message }, status);
+  }
+
+  const { data, error: listError } = await supabase
+    .from("vocabulary_users")
+    .select("vocabulary_id, user_id, created_at, profiles(id, email, name)")
+    .eq("vocabulary_id", id)
+    .order("created_at", { ascending: true });
+
+  if (listError) {
+    return c.json({ error: pgErrorMessage(listError) }, 400);
+  }
+
+  return c.json({ communicators: relationshipMembers(data as RelationshipRow[]) }, 201);
+});
+
+vocabularyRoutes.delete("/:id/communicators/:userId", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const userId = c.req.param("userId");
+
+  const { error } = await supabase.rpc("remove_vocabulary_communicator", {
+    p_vocabulary_id: id,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  return c.json({ ok: true });
 });
 
 vocabularyRoutes.delete("/:id/managers/:userId", async (c) => {
