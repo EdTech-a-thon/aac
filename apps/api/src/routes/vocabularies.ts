@@ -101,6 +101,27 @@ async function requireVocabularyManager(
   return { ok: true as const };
 }
 
+async function requireVocabularyCommunicator(
+  supabase: AuthVariables["supabase"],
+  userId: string,
+  vocabularyId: string,
+) {
+  const { data, error } = await supabase
+    .from("vocabulary_users")
+    .select("user_id")
+    .eq("vocabulary_id", vocabularyId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false as const, error: pgErrorMessage(error) };
+  }
+  if (!data) {
+    return { ok: false as const, error: "Not a communicator of this vocabulary" };
+  }
+  return { ok: true as const };
+}
+
 type ChangeSet = {
   id: string;
   vocabulary_id: string;
@@ -133,18 +154,49 @@ vocabularyRoutes.use("*", requireAuth);
 
 vocabularyRoutes.get("/", async (c) => {
   const supabase = c.get("supabase");
+  const userId = c.get("user").id;
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at")
+    .select("id, name, created_at, updated_at, vocabulary_managers!inner(user_id)")
+    .eq("vocabulary_managers.user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
-  return c.json({
-    vocabularies: (data as Vocabulary[]).map(withDisplayName),
+  const vocabularies = (data ?? []).map((row) => {
+    const { vocabulary_managers: _, ...vocabulary } = row as Vocabulary & {
+      vocabulary_managers: unknown;
+    };
+    return withDisplayName(vocabulary);
   });
+
+  return c.json({ vocabularies });
+});
+
+vocabularyRoutes.get("/using", async (c) => {
+  const supabase = c.get("supabase");
+  const userId = c.get("user").id;
+  const { data, error } = await supabase
+    .from("vocabularies")
+    .select("id, name, created_at, updated_at, vocabulary_users!inner(user_id)")
+    .eq("vocabulary_users.user_id", userId);
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  const vocabularies = (data ?? [])
+    .map((row) => {
+      const { vocabulary_users: _, ...vocabulary } = row as Vocabulary & {
+        vocabulary_users: unknown;
+      };
+      return withDisplayName(vocabulary);
+    })
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  return c.json({ vocabularies });
 });
 
 vocabularyRoutes.post("/", async (c) => {
@@ -188,6 +240,94 @@ vocabularyRoutes.get("/:id", async (c) => {
 
   return c.json({
     vocabulary: withDisplayName(data as Vocabulary),
+  });
+});
+
+vocabularyRoutes.get("/:id/live", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const usage = await requireVocabularyCommunicator(supabase, c.get("user").id, id);
+  if (!usage.ok) {
+    return c.json({ error: usage.error }, 404);
+  }
+
+  const vocabularyResult = await supabase
+    .from("vocabularies")
+    .select("id, name, created_at, updated_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (vocabularyResult.error) {
+    return c.json({ error: pgErrorMessage(vocabularyResult.error) }, 400);
+  }
+  if (!vocabularyResult.data) {
+    return c.json({ error: "Vocabulary not found" }, 404);
+  }
+
+  const [boardsResult, paletteResult, revisionResult] = await Promise.all([
+    supabase
+      .from("boards")
+      .select("id, vocabulary_id, name, width, height, created_at, updated_at")
+      .eq("vocabulary_id", id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("palette_colors")
+      .select(
+        "id, vocabulary_id, hex, name, description, position, created_at, updated_at",
+      )
+      .eq("vocabulary_id", id)
+      .order("position", { ascending: true }),
+    supabase.rpc("live_vocabulary_revision", { p_vocabulary_id: id }),
+  ]);
+
+  if (boardsResult.error) {
+    return c.json({ error: pgErrorMessage(boardsResult.error) }, 400);
+  }
+  if (paletteResult.error) {
+    return c.json({ error: pgErrorMessage(paletteResult.error) }, 400);
+  }
+  if (revisionResult.error) {
+    return c.json({ error: pgErrorMessage(revisionResult.error) }, 400);
+  }
+
+  const boards = (boardsResult.data ?? []) as Board[];
+  const boardIds = boards.map((board) => board.id);
+  let buttons: Button[] = [];
+  if (boardIds.length > 0) {
+    const buttonsResult = await supabase
+      .from("buttons")
+      .select(
+        "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, created_at, updated_at",
+      )
+      .in("board_id", boardIds)
+      .order("created_at", { ascending: true });
+    if (buttonsResult.error) {
+      return c.json({ error: pgErrorMessage(buttonsResult.error) }, 400);
+    }
+    buttons = (buttonsResult.data ?? []) as Button[];
+  }
+
+  const buttonsByBoard = new Map<string, Button[]>();
+  for (const button of buttons) {
+    const list = buttonsByBoard.get(button.board_id) ?? [];
+    list.push(button);
+    buttonsByBoard.set(button.board_id, list);
+  }
+
+  const revision =
+    typeof revisionResult.data === "number"
+      ? revisionResult.data
+      : Number(revisionResult.data ?? 0);
+
+  return c.json({
+    snapshot: {
+      ...withDisplayName(vocabularyResult.data as Vocabulary),
+      revision,
+      paletteColors: (paletteResult.data ?? []) as PaletteColor[],
+      boards: boards.map((board) => ({
+        ...withDisplayName(board),
+        buttons: buttonsByBoard.get(board.id) ?? [],
+      })),
+    },
   });
 });
 
@@ -344,6 +484,10 @@ vocabularyRoutes.delete("/:id/boards/:boardId/buttons/:buttonId", (c) =>
 vocabularyRoutes.get("/:id/change-sets", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) {
+    return c.json({ error: managed.error }, 400);
+  }
   const status = c.req.query("status");
 
   let query = supabase
@@ -486,6 +630,10 @@ vocabularyRoutes.delete("/:id/change-sets/:changeSetId", async (c) => {
 vocabularyRoutes.get("/:id/managers", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) {
+    return c.json({ error: managed.error }, 400);
+  }
 
   const { data, error } = await supabase
     .from("vocabulary_managers")

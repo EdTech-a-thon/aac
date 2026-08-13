@@ -22,17 +22,26 @@ export async function createTestUser() {
 
   const email = `cs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
   const password = "test-password-changeset-123";
-  const { data, error } = await sb.auth.signUp({ email, password });
-  if (error || !data.session || !data.user) {
-    throw new Error(error?.message ?? "Failed to create test user");
+
+  let lastError: string | undefined;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (data.session && data.user) {
+      return {
+        email,
+        password,
+        userId: data.user.id,
+        accessToken: data.session.access_token,
+      };
+    }
+    lastError = error?.message ?? "Failed to create test user";
+    if (!lastError.toLowerCase().includes("rate limit") || attempt === 5) {
+      throw new Error(lastError);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
   }
 
-  return {
-    email,
-    password,
-    userId: data.user.id,
-    accessToken: data.session.access_token,
-  };
+  throw new Error(lastError ?? "Failed to create test user");
 }
 
 export async function apiJson<T>(
