@@ -3,6 +3,7 @@ import { cellRef, columnLetter, rowNumber } from './boardCellRef';
 import type { ChangeSetMutation } from './changeSetMutations';
 import type { MutationLookupContext } from './describeChangeSetMutations';
 import { describeChangeSetMutations } from './describeChangeSetMutations';
+import { projectVocabulary, type ProjectedVocabulary } from './projectVocabulary';
 
 export type PreviewButton = {
 	id: string;
@@ -209,7 +210,7 @@ export function describeScopedChange(
 }
 
 function toPreviewButton(
-	button: RichLookupContext['buttons'][number]
+	button: RichLookupContext['buttons'][number] | ProjectedVocabulary['buttons'][number]
 ): PreviewButton {
 	return {
 		id: button.id,
@@ -222,107 +223,49 @@ function toPreviewButton(
 	};
 }
 
-/** Apply board-scoped button mutations to produce the post-suggestion preview state. */
-export function applyPreviewButtons(
-	boardId: string,
-	baseButtons: RichLookupContext['buttons'],
-	mutations: ChangeSetMutation[]
-): PreviewButton[] {
-	const buttons = new Map<string, PreviewButton>();
-	for (const button of baseButtons) {
-		if (button.board_id === boardId) {
-			buttons.set(button.id, toPreviewButton(button));
-		}
-	}
-
-	for (const mutation of mutations) {
-		if (mutation.op === 'create_button' && mutation.board_id === boardId) {
-			buttons.set(mutation.id, {
-				id: mutation.id,
-				board_id: mutation.board_id,
-				label: mutation.label,
-				row_index: mutation.row_index,
-				col_index: mutation.col_index,
-				background_color:
-					mutation.background_color !== undefined ? mutation.background_color : null,
-				palette_color_id:
-					mutation.palette_color_id !== undefined ? mutation.palette_color_id : null
-			});
-			continue;
-		}
-
-		if (mutation.op === 'delete_button') {
-			buttons.delete(mutation.id);
-			continue;
-		}
-
-		if (mutation.op !== 'update_button') continue;
-
-		const existing =
-			buttons.get(mutation.id) ??
-			(() => {
-				const fromBase = baseButtons.find((b) => b.id === mutation.id);
-				return fromBase ? toPreviewButton(fromBase) : null;
-			})();
-		if (!existing) continue;
-
-		const nextBoardId = mutation.board_id ?? existing.board_id;
-		if (existing.board_id === boardId && nextBoardId !== boardId) {
-			buttons.delete(mutation.id);
-			continue;
-		}
-		if (nextBoardId !== boardId) continue;
-
-		buttons.set(mutation.id, {
-			id: mutation.id,
-			board_id: nextBoardId,
-			label: mutation.label !== undefined ? mutation.label : existing.label,
-			row_index: mutation.row_index !== undefined ? mutation.row_index : existing.row_index,
-			col_index: mutation.col_index !== undefined ? mutation.col_index : existing.col_index,
-			background_color:
-				mutation.background_color !== undefined
-					? mutation.background_color
-					: existing.background_color,
-			palette_color_id:
-				mutation.palette_color_id !== undefined
-					? mutation.palette_color_id
-					: existing.palette_color_id
-		});
-	}
-
-	return [...buttons.values()];
+function liveFromLookup(ctx: RichLookupContext): ProjectedVocabulary {
+	return {
+		vocabularyId: '',
+		boards: ctx.boards.map((b) => ({
+			id: b.id,
+			vocabulary_id: '',
+			name: b.name,
+			displayName: displayName(b.name),
+			width: b.width,
+			height: b.height,
+			created_at: '',
+			updated_at: ''
+		})),
+		buttons: ctx.buttons.map((b) => ({
+			id: b.id,
+			board_id: b.board_id,
+			row_index: b.row_index,
+			col_index: b.col_index,
+			label: b.label,
+			background_color: b.background_color ?? null,
+			palette_color_id: b.palette_color_id ?? null,
+			action: null,
+			created_at: '',
+			updated_at: ''
+		})),
+		paletteColors: ctx.paletteColors.map((c, index) => ({
+			id: c.id,
+			vocabulary_id: '',
+			hex: c.hex,
+			name: c.name,
+			description: '',
+			position: index,
+			created_at: '',
+			updated_at: ''
+		}))
+	};
 }
 
-/** Apply Palette mutations for resolving button colors in the after-state preview. */
-export function applyPreviewPalette(
-	baseColors: RichLookupContext['paletteColors'],
-	mutations: ChangeSetMutation[]
-): Record<string, string> {
-	const colors = new Map(baseColors.map((c) => [c.id, { ...c }]));
-	for (const mutation of mutations) {
-		if (mutation.op === 'create_palette_color') {
-			colors.set(mutation.id, {
-				id: mutation.id,
-				name: mutation.name,
-				hex: mutation.hex
-			});
-		} else if (mutation.op === 'update_palette_color') {
-			const existing = colors.get(mutation.id);
-			if (!existing) continue;
-			colors.set(mutation.id, {
-				...existing,
-				hex: mutation.hex !== undefined ? mutation.hex : existing.hex,
-				name: mutation.name !== undefined ? mutation.name : existing.name
-			});
-		} else if (mutation.op === 'delete_palette_color') {
-			colors.delete(mutation.id);
-		}
-	}
-	const map: Record<string, string> = {};
-	for (const color of colors.values()) {
-		map[color.id] = color.hex;
-	}
-	return map;
+function previewButtonsOnBoard(
+	projected: ProjectedVocabulary,
+	boardId: string
+): PreviewButton[] {
+	return projected.buttons.filter((button) => button.board_id === boardId).map(toPreviewButton);
 }
 
 function buildOverlays(
@@ -431,6 +374,7 @@ export function groupSuggestedChanges(
 	mutations: ChangeSetMutation[],
 	ctx: RichLookupContext
 ): SuggestedChangeGroup[] {
+	const projected = projectVocabulary(liveFromLookup(ctx), mutations);
 	const createdBoardIds = new Set(
 		mutations.filter((m) => m.op === 'create_board').map((m) => m.id)
 	);
@@ -524,7 +468,7 @@ export function groupSuggestedChanges(
 		byBoard.delete(group.boardId);
 		topLevel[i] = {
 			...group,
-			buttons: applyPreviewButtons(group.boardId, ctx.buttons, nested),
+			buttons: previewButtonsOnBoard(projected, group.boardId),
 			overlays: buildOverlays(nested, ctx, group.boardId),
 			changeLines: nested.map((m) => describeScopedChange(m, ctx))
 		};
@@ -544,7 +488,7 @@ export function groupSuggestedChanges(
 			name: displayName(updateBoard?.name ?? board?.name),
 			width: updateBoard?.width ?? board?.width ?? 1,
 			height: updateBoard?.height ?? board?.height ?? 1,
-			buttons: applyPreviewButtons(boardId, ctx.buttons, boardMutations),
+			buttons: previewButtonsOnBoard(projected, boardId),
 			overlays: buildOverlays(boardMutations, ctx, boardId),
 			changeLines: boardMutations.map((m) => describeScopedChange(m, ctx))
 		});

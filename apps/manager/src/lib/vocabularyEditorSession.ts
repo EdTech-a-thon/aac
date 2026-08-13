@@ -6,6 +6,7 @@ import {
 	type ChangeSetMutation,
 	type PaletteColorSnapshot
 } from './changeSetMutations';
+import { projectVocabulary } from './projectVocabulary';
 import type { Board, BoardButton, PaletteColor } from './types';
 
 export type SuggestedChangeSet = {
@@ -186,202 +187,39 @@ export function replaceEditorLiveFromServer(
 	bumpEditorRevision();
 }
 
-function boardDisplayName(name: string) {
-	const trimmed = name.trim();
-	return trimmed ? trimmed : 'Untitled';
+function groupButtonsByBoard(
+	boards: Board[],
+	buttons: BoardButton[]
+): Record<string, BoardButton[]> {
+	const map: Record<string, BoardButton[]> = {};
+	for (const board of boards) {
+		map[board.id] = [];
+	}
+	for (const button of buttons) {
+		const list = map[button.board_id] ?? [];
+		list.push(button);
+		map[button.board_id] = list;
+	}
+	return map;
 }
 
-/** Replay Change Set mutations onto the working copy only (not the live base). */
-function applyMutationsToWorkingCopy(
+/** Project pending mutations onto the working copy only (not the live base). */
+function applyProjectedVocabularyToWorkingCopy(
 	session: VocabularyEditorSession,
 	mutations: ChangeSetMutation[]
 ) {
-	const now = new Date().toISOString();
-
-	for (const mutation of mutations) {
-		switch (mutation.op) {
-			case 'create_board': {
-				session.boards = [
-					...session.boards,
-					{
-						id: mutation.id,
-						vocabulary_id: session.vocabularyId,
-						name: mutation.name,
-						displayName: boardDisplayName(mutation.name),
-						width: mutation.width,
-						height: mutation.height,
-						created_at: now,
-						updated_at: now
-					}
-				];
-				session.buttonsByBoardId = {
-					...session.buttonsByBoardId,
-					[mutation.id]: []
-				};
-				break;
-			}
-			case 'update_board': {
-				session.boards = session.boards.map((board) => {
-					if (board.id !== mutation.id) return board;
-					const name = mutation.name !== undefined ? mutation.name : board.name;
-					return {
-						...board,
-						name,
-						displayName: boardDisplayName(name),
-						width: mutation.width !== undefined ? mutation.width : board.width,
-						height: mutation.height !== undefined ? mutation.height : board.height,
-						updated_at: now
-					};
-				});
-				break;
-			}
-			case 'delete_board': {
-				session.boards = session.boards.filter((board) => board.id !== mutation.id);
-				const { [mutation.id]: _removed, ...rest } = session.buttonsByBoardId;
-				session.buttonsByBoardId = rest;
-				for (const [boardId, buttons] of Object.entries(session.buttonsByBoardId)) {
-					session.buttonsByBoardId[boardId] = buttons.map((button) => {
-						if (
-							button.action?.kind === 'open_board' &&
-							button.action.board_id === mutation.id
-						) {
-							return { ...button, action: null, updated_at: now };
-						}
-						return button;
-					});
-				}
-				break;
-			}
-			case 'create_button': {
-				const button: BoardButton = {
-					id: mutation.id,
-					board_id: mutation.board_id,
-					row_index: mutation.row_index,
-					col_index: mutation.col_index,
-					label: mutation.label,
-					background_color:
-						mutation.background_color !== undefined ? mutation.background_color : null,
-					palette_color_id:
-						mutation.palette_color_id !== undefined ? mutation.palette_color_id : null,
-					action: mutation.action !== undefined ? mutation.action : null,
-					created_at: now,
-					updated_at: now
-				};
-				const existing = session.buttonsByBoardId[mutation.board_id] ?? [];
-				session.buttonsByBoardId = {
-					...session.buttonsByBoardId,
-					[mutation.board_id]: [...existing, button]
-				};
-				break;
-			}
-			case 'update_button': {
-				let movedFrom: string | null = null;
-				let updated: BoardButton | null = null;
-				const nextMap: Record<string, BoardButton[]> = {};
-				for (const [boardId, buttons] of Object.entries(session.buttonsByBoardId)) {
-					nextMap[boardId] = [];
-					for (const button of buttons) {
-						if (button.id !== mutation.id) {
-							nextMap[boardId].push(button);
-							continue;
-						}
-						updated = {
-							...button,
-							board_id:
-								mutation.board_id !== undefined ? mutation.board_id : button.board_id,
-							row_index:
-								mutation.row_index !== undefined ? mutation.row_index : button.row_index,
-							col_index:
-								mutation.col_index !== undefined ? mutation.col_index : button.col_index,
-							label: mutation.label !== undefined ? mutation.label : button.label,
-							background_color:
-								mutation.background_color !== undefined
-									? mutation.background_color
-									: button.background_color,
-							palette_color_id:
-								mutation.palette_color_id !== undefined
-									? mutation.palette_color_id
-									: button.palette_color_id,
-							action: mutation.action !== undefined ? mutation.action : button.action,
-							updated_at: now
-						};
-						if (updated.board_id !== boardId) movedFrom = boardId;
-						else nextMap[boardId].push(updated);
-					}
-				}
-				if (updated && movedFrom !== null) {
-					const dest = updated.board_id;
-					nextMap[dest] = [...(nextMap[dest] ?? []), updated];
-				}
-				if (updated) session.buttonsByBoardId = nextMap;
-				break;
-			}
-			case 'delete_button': {
-				const nextMap: Record<string, BoardButton[]> = {};
-				for (const [boardId, buttons] of Object.entries(session.buttonsByBoardId)) {
-					nextMap[boardId] = buttons.filter((button) => button.id !== mutation.id);
-				}
-				session.buttonsByBoardId = nextMap;
-				break;
-			}
-			case 'create_palette_color': {
-				session.paletteColors = [
-					...session.paletteColors,
-					{
-						id: mutation.id,
-						vocabulary_id: session.vocabularyId,
-						hex: mutation.hex,
-						name: mutation.name,
-						description: mutation.description,
-						position: mutation.position,
-						created_at: now,
-						updated_at: now
-					}
-				];
-				break;
-			}
-			case 'update_palette_color': {
-				session.paletteColors = session.paletteColors.map((color) => {
-					if (color.id !== mutation.id) return color;
-					return {
-						...color,
-						hex: mutation.hex !== undefined ? mutation.hex : color.hex,
-						name: mutation.name !== undefined ? mutation.name : color.name,
-						description:
-							mutation.description !== undefined
-								? mutation.description
-								: color.description,
-						position: mutation.position !== undefined ? mutation.position : color.position,
-						updated_at: now
-					};
-				});
-				break;
-			}
-			case 'delete_palette_color': {
-				const deleted = session.paletteColors.find((color) => color.id === mutation.id);
-				session.paletteColors = session.paletteColors.filter(
-					(color) => color.id !== mutation.id
-				);
-				if (deleted) {
-					const nextMap: Record<string, BoardButton[]> = {};
-					for (const [boardId, buttons] of Object.entries(session.buttonsByBoardId)) {
-						nextMap[boardId] = buttons.map((button) => {
-							if (button.palette_color_id !== mutation.id) return button;
-							return {
-								...button,
-								palette_color_id: null,
-								background_color: deleted.hex,
-								updated_at: now
-							};
-						});
-					}
-					session.buttonsByBoardId = nextMap;
-				}
-				break;
-			}
-		}
-	}
-
+	const projected = projectVocabulary(
+		{
+			vocabularyId: session.vocabularyId,
+			boards: session.boards,
+			buttons: allButtonsFromMap(session.buttonsByBoardId),
+			paletteColors: session.paletteColors
+		},
+		mutations
+	);
+	session.boards = projected.boards;
+	session.buttonsByBoardId = groupButtonsByBoard(projected.boards, projected.buttons);
+	session.paletteColors = projected.paletteColors;
 	if (
 		!session.selectedBoardId ||
 		!session.boards.some((board) => board.id === session.selectedBoardId)
@@ -393,7 +231,7 @@ function applyMutationsToWorkingCopy(
 /**
  * Advance the live tip from the server while preserving staged local edits.
  * Captures pending mutations, replaces base+working with the new tip, then
- * replays those mutations onto the working copy.
+ * projects those mutations onto the working copy.
  */
 export function rebaseEditorOntoLiveFromServer(
 	session: VocabularyEditorSession,
@@ -404,7 +242,7 @@ export function rebaseEditorOntoLiveFromServer(
 	const pending = pendingEditorMutations(session);
 	replaceEditorLiveFromServer(session, boards, buttonsByBoardId, paletteColors);
 	if (pending.length > 0) {
-		applyMutationsToWorkingCopy(session, pending);
+		applyProjectedVocabularyToWorkingCopy(session, pending);
 		bumpEditorRevision();
 	}
 }

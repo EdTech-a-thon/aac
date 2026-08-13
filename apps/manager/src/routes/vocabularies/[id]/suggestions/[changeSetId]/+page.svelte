@@ -4,7 +4,8 @@
 	import { getDashboard } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth } from '$lib/auth';
 	import { normalizeSuggestedChangeSets } from '$lib/describeChangeSetMutations';
-	import { groupSuggestedChanges, applyPreviewPalette } from '$lib/groupSuggestedChanges';
+	import { groupSuggestedChanges } from '$lib/groupSuggestedChanges';
+	import { projectVocabulary } from '$lib/projectVocabulary';
 	import SuggestedBoardPreview from '$lib/components/SuggestedBoardPreview.svelte';
 	import {
 		getVocabularyEditorSession,
@@ -46,14 +47,22 @@
 
 	const paletteById = $derived.by(() => {
 		revision;
-		if (!changeSet) {
-			const map: Record<string, string> = {};
-			for (const color of session.basePaletteColors) {
-				map[color.id] = color.hex;
-			}
-			return map;
+		const colors = !changeSet
+			? session.basePaletteColors
+			: projectVocabulary(
+					{
+						vocabularyId,
+						boards: session.baseBoards,
+						buttons: Object.values(session.baseButtonsByBoardId).flat(),
+						paletteColors: session.basePaletteColors
+					},
+					changeSet.mutations
+				).paletteColors;
+		const map: Record<string, string> = {};
+		for (const color of colors) {
+			map[color.id] = color.hex;
 		}
-		return applyPreviewPalette(session.basePaletteColors, changeSet.mutations);
+		return map;
 	});
 
 	async function hydrateForPreview(id: string, accessToken: string) {

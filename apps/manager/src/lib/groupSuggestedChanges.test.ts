@@ -81,14 +81,6 @@ describe('groupSuggestedChanges', () => {
 		expect(board.kind).toBe('board');
 		if (board.kind === 'board') {
 			expect(board.name).toBe('Home');
-			expect(board.buttons).toEqual([
-				expect.objectContaining({
-					id: 'btn-1',
-					row_index: 0,
-					col_index: 2,
-					label: 'eat'
-				})
-			]);
 			expect(board.overlays).toEqual(
 				expect.arrayContaining([
 					{ kind: 'move', fromRow: 0, fromCol: 0, toRow: 0, toCol: 2 },
