@@ -78,8 +78,12 @@
 		return button.background_color ?? DEFAULT_BUTTON_COLOR;
 	}
 
-	let selectedButtonId = $state<string | null>(null);
-	let selectedInclusionId = $state<string | null>(null);
+	type CanvasSelection =
+		| { kind: 'button'; id: string }
+		| { kind: 'inclusion'; id: string }
+		| null;
+
+	let selection = $state<CanvasSelection>(null);
 	let loadingBoards = $state(true);
 	let loadingButtons = $state(true);
 	let error = $state<string | null>(null);
@@ -135,8 +139,9 @@
 	let propsError = $state<string | null>(null);
 	let boardSizeError = $state<string | null>(null);
 
-	let drag = $state<{
-		buttonId: string;
+	type ItemDrag = {
+		kind: 'button' | 'inclusion';
+		id: string;
 		pointerId: number;
 		startX: number;
 		startY: number;
@@ -146,27 +151,13 @@
 		currentCol: number;
 		grabOffsetX: number;
 		grabOffsetY: number;
-		floatX: number;
-		floatY: number;
-		active: boolean;
-	} | null>(null);
-	let inclusionDrag = $state<{
-		inclusionId: string;
-		pointerId: number;
-		startX: number;
-		startY: number;
-		originRow: number;
-		originCol: number;
-		currentOriginRow: number;
-		currentOriginCol: number;
 		grabLocalRow: number;
 		grabLocalCol: number;
-		grabOffsetX: number;
-		grabOffsetY: number;
 		floatX: number;
 		floatY: number;
 		active: boolean;
-	} | null>(null);
+	};
+	let drag = $state<ItemDrag | null>(null);
 	let didDrag = $state(false);
 	let cellMenu = $state<{ row: number; col: number; x: number; y: number } | null>(null);
 	let insertSnippetOpen = $state(false);
@@ -198,9 +189,11 @@
 
 	const selectedGridNoun = $derived(selectedBoard && isSnippet(selectedBoard) ? 'snippet' : 'board');
 
-	const selectedButton = $derived(
-		buttons.find((button) => button.id === selectedButtonId) ?? null
-	);
+	const selectedButton = $derived.by(() => {
+		const current = selection;
+		if (current?.kind !== 'button') return null;
+		return buttons.find((button) => button.id === current.id) ?? null;
+	});
 
 	const hostInclusions = $derived.by(() => {
 		if (!selectedBoardId) return [] as SnippetInclusion[];
@@ -213,9 +206,11 @@
 			});
 	});
 
-	const selectedInclusion = $derived(
-		hostInclusions.find((inc) => inc.id === selectedInclusionId) ?? null
-	);
+	const selectedInclusion = $derived.by(() => {
+		const current = selection;
+		if (current?.kind !== 'inclusion') return null;
+		return hostInclusions.find((inc) => inc.id === current.id) ?? null;
+	});
 
 	const selectedInclusionSnippet = $derived(
 		selectedInclusion
@@ -306,6 +301,7 @@
 	function newestInclusionAt(row: number, col: number) {
 		let newest: SnippetInclusion | null = null;
 		for (const inc of hostInclusions) {
+			if (drag?.active && drag.kind === 'inclusion' && drag.id === inc.id) continue;
 			if (!inclusionContainsCell(inc, row, col)) continue;
 			if (
 				!newest ||
@@ -318,20 +314,35 @@
 		return newest;
 	}
 
-	function clippedInclusionRect(
+	function inclusionRect(
 		inc: SnippetInclusion,
 		originRow = inc.origin_row,
 		originCol = inc.origin_col
 	) {
 		const snippet = snippetForInclusion(inc);
-		const host = selectedBoard;
-		if (!snippet || !host) return null;
-		const row0 = Math.max(0, originRow);
-		const col0 = Math.max(0, originCol);
-		const row1 = Math.min(host.height, originRow + snippet.height);
-		const col1 = Math.min(host.width, originCol + snippet.width);
-		if (row1 <= row0 || col1 <= col0) return null;
-		return { row: row0, col: col0, height: row1 - row0, width: col1 - col0 };
+		if (!snippet) return null;
+		return {
+			row: originRow,
+			col: originCol,
+			width: snippet.width,
+			height: snippet.height
+		};
+	}
+
+	function dragPreviewRect(item: ItemDrag) {
+		if (item.kind === 'button') {
+			return { row: item.currentRow, col: item.currentCol, width: 1, height: 1 };
+		}
+		const inc = snippetInclusions.find((entry) => entry.id === item.id);
+		if (!inc) return { row: item.currentRow, col: item.currentCol, width: 1, height: 1 };
+		return (
+			inclusionRect(inc, item.currentRow, item.currentCol) ?? {
+				row: item.currentRow,
+				col: item.currentCol,
+				width: 1,
+				height: 1
+			}
+		);
 	}
 
 	function cellSpanSize(count: number) {
@@ -385,24 +396,6 @@
 		return mapped;
 	}
 
-	function clampInclusionOrigin(
-		inc: SnippetInclusion,
-		originRow: number,
-		originCol: number
-	) {
-		const snippet = snippetForInclusion(inc);
-		const host = selectedBoard;
-		if (!snippet || !host) return { row: originRow, col: originCol };
-		const minRow = 1 - snippet.height;
-		const maxRow = host.height - 1;
-		const minCol = 1 - snippet.width;
-		const maxCol = host.width - 1;
-		return {
-			row: Math.min(maxRow, Math.max(minRow, originRow)),
-			col: Math.min(maxCol, Math.max(minCol, originCol))
-		};
-	}
-
 	function clampZoom(value: number) {
 		return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 	}
@@ -425,6 +418,17 @@
 			minY = Math.min(minY, top);
 			maxX = Math.max(maxX, left + CELL);
 			maxY = Math.max(maxY, top + CELL);
+		}
+
+		for (const inc of hostInclusions) {
+			const rect = inclusionRect(inc);
+			if (!rect) continue;
+			const left = BOARD_PAD + LABEL_GUTTER + cellLeft(rect.col);
+			const top = BOARD_PAD + LABEL_GUTTER + cellTop(rect.row);
+			minX = Math.min(minX, left);
+			minY = Math.min(minY, top);
+			maxX = Math.max(maxX, left + cellSpanSize(rect.width));
+			maxY = Math.max(maxY, top + cellSpanSize(rect.height));
 		}
 
 		const contentW = Math.max(maxX - minX, 1);
@@ -533,21 +537,23 @@
 
 	$effect(() => {
 		selectedBoardId;
-		selectedButtonId = null;
-		selectedInclusionId = null;
+		selection = null;
 		cellMenu = null;
 	});
 
 	$effect(() => {
 		revision;
-		if (selectedButtonId && !buttons.some((button) => button.id === selectedButtonId)) {
-			selectedButtonId = null;
-		}
+		const current = selection;
 		if (
-			selectedInclusionId &&
-			!hostInclusions.some((inc) => inc.id === selectedInclusionId)
+			current?.kind === 'button' &&
+			!buttons.some((button) => button.id === current.id)
 		) {
-			selectedInclusionId = null;
+			selection = null;
+		} else if (
+			current?.kind === 'inclusion' &&
+			!hostInclusions.some((inc) => inc.id === current.id)
+		) {
+			selection = null;
 		}
 	});
 
@@ -575,7 +581,7 @@
 	});
 
 	$effect(() => {
-		const id = selectedButtonId;
+		const id = selection?.kind === 'button' ? selection.id : null;
 
 		if (!id) {
 			labelDraft = '';
@@ -645,10 +651,10 @@
 				(event.key === 'Backspace' || event.key === 'Delete') &&
 				!isEditableTarget(event.target)
 			) {
-				if (selectedInclusionId) {
+				if (selection?.kind === 'inclusion') {
 					event.preventDefault();
 					deleteSelectedInclusion();
-				} else if (selectedButtonId) {
+				} else if (selection?.kind === 'button') {
 					event.preventDefault();
 					deleteSelectedButton();
 				}
@@ -669,7 +675,7 @@
 		createKind = kind;
 		newBoardName = '';
 		newBoardWidth = 6;
-		newBoardHeight = 5;
+		newBoardHeight = kind === 'snippet' ? 1 : 5;
 		createError = null;
 		createOpen = true;
 	}
@@ -761,26 +767,27 @@
 		deleteOpen = false;
 	}
 
+	function isSelected(kind: 'button' | 'inclusion', id: string) {
+		return selection?.kind === kind && selection?.id === id;
+	}
+
 	function selectButton(button: BoardButton, event?: MouseEvent) {
 		event?.stopPropagation();
 		if (didDrag) return;
-		selectedButtonId = button.id;
-		selectedInclusionId = null;
+		selection = { kind: 'button', id: button.id };
 		cellMenu = null;
 	}
 
 	function selectInclusion(inc: SnippetInclusion, event?: MouseEvent) {
 		event?.stopPropagation();
 		if (didDrag) return;
-		selectedInclusionId = inc.id;
-		selectedButtonId = null;
+		selection = { kind: 'inclusion', id: inc.id };
 		cellMenu = null;
 	}
 
 	function clearSelection() {
 		if (didPan || didDrag) return;
-		selectedButtonId = null;
-		selectedInclusionId = null;
+		selection = null;
 		cellMenu = null;
 	}
 
@@ -810,27 +817,33 @@
 		return Boolean(occupant && occupant.id !== buttonId);
 	}
 
-	function onButtonPointerDown(button: BoardButton, event: PointerEvent) {
-		if (event.button !== 0 || spaceDown) return;
-		event.stopPropagation();
-		selectedButtonId = button.id;
-		selectedInclusionId = null;
-		cellMenu = null;
+	function beginItemDrag(
+		kind: 'button' | 'inclusion',
+		id: string,
+		originRow: number,
+		originCol: number,
+		event: PointerEvent,
+		grabLocalRow = 0,
+		grabLocalCol = 0
+	) {
 		didDrag = false;
-		const originLeft = cellLeft(button.col_index);
-		const originTop = cellTop(button.row_index);
+		const originLeft = cellLeft(originCol);
+		const originTop = cellTop(originRow);
 		const local = pointerToBoardLocal(event.clientX, event.clientY);
 		drag = {
-			buttonId: button.id,
+			kind,
+			id,
 			pointerId: event.pointerId,
 			startX: event.clientX,
 			startY: event.clientY,
-			originRow: button.row_index,
-			originCol: button.col_index,
-			currentRow: button.row_index,
-			currentCol: button.col_index,
+			originRow,
+			originCol,
+			currentRow: originRow,
+			currentCol: originCol,
 			grabOffsetX: local ? local.x - originLeft : CELL / 2,
 			grabOffsetY: local ? local.y - originTop : CELL / 2,
+			grabLocalRow,
+			grabLocalCol,
 			floatX: originLeft,
 			floatY: originTop,
 			active: false
@@ -838,7 +851,15 @@
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 	}
 
-	function onButtonPointerMove(event: PointerEvent) {
+	function onButtonPointerDown(button: BoardButton, event: PointerEvent) {
+		if (event.button !== 0 || spaceDown) return;
+		event.stopPropagation();
+		selection = { kind: 'button', id: button.id };
+		cellMenu = null;
+		beginItemDrag('button', button.id, button.row_index, button.col_index, event);
+	}
+
+	function onItemPointerMove(event: PointerEvent) {
 		if (!drag || drag.pointerId !== event.pointerId) return;
 		const dist = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
 		if (!drag.active && dist > 6) {
@@ -851,8 +872,18 @@
 		const cell = pointerToCell(event.clientX, event.clientY);
 		const nextFloatX = local ? local.x - drag.grabOffsetX : drag.floatX;
 		const nextFloatY = local ? local.y - drag.grabOffsetY : drag.floatY;
-		const nextRow = cell?.row ?? drag.currentRow;
-		const nextCol = cell?.col ?? drag.currentCol;
+		const nextRow =
+			cell == null
+				? drag.currentRow
+				: drag.kind === 'inclusion'
+					? cell.row - drag.grabLocalRow
+					: cell.row;
+		const nextCol =
+			cell == null
+				? drag.currentCol
+				: drag.kind === 'inclusion'
+					? cell.col - drag.grabLocalCol
+					: cell.col;
 		if (
 			nextFloatX !== drag.floatX ||
 			nextFloatY !== drag.floatY ||
@@ -869,7 +900,7 @@
 		}
 	}
 
-	async function onButtonPointerUp(event: PointerEvent) {
+	function onItemPointerUp(event: PointerEvent) {
 		if (!drag || drag.pointerId !== event.pointerId) return;
 		const snapshot = drag;
 		drag = null;
@@ -896,14 +927,21 @@
 			return;
 		}
 
-		if (dropTargetBlocked(snapshot.currentRow, snapshot.currentCol, snapshot.buttonId)) {
+		if (
+			snapshot.kind === 'button' &&
+			dropTargetBlocked(snapshot.currentRow, snapshot.currentCol, snapshot.id)
+		) {
 			queueMicrotask(() => {
 				didDrag = false;
 			});
 			return;
 		}
 
-		moveButton(snapshot.buttonId, snapshot.currentRow, snapshot.currentCol);
+		if (snapshot.kind === 'button') {
+			moveButton(snapshot.id, snapshot.currentRow, snapshot.currentCol);
+		} else {
+			moveInclusion(snapshot.id, snapshot.currentRow, snapshot.currentCol);
+		}
 		queueMicrotask(() => {
 			didDrag = false;
 		});
@@ -912,88 +950,20 @@
 	function onInclusionPointerDown(inc: SnippetInclusion, event: PointerEvent) {
 		if (event.button !== 0 || spaceDown) return;
 		event.stopPropagation();
-		selectedInclusionId = inc.id;
-		selectedButtonId = null;
+		selection = { kind: 'inclusion', id: inc.id };
 		cellMenu = null;
-		didDrag = false;
 		const cell = pointerToCell(event.clientX, event.clientY);
 		const grabLocalRow = cell ? cell.row - inc.origin_row : 0;
 		const grabLocalCol = cell ? cell.col - inc.origin_col : 0;
-		const originLeft = cellLeft(inc.origin_col);
-		const originTop = cellTop(inc.origin_row);
-		const local = pointerToBoardLocal(event.clientX, event.clientY);
-		inclusionDrag = {
-			inclusionId: inc.id,
-			pointerId: event.pointerId,
-			startX: event.clientX,
-			startY: event.clientY,
-			originRow: inc.origin_row,
-			originCol: inc.origin_col,
-			currentOriginRow: inc.origin_row,
-			currentOriginCol: inc.origin_col,
+		beginItemDrag(
+			'inclusion',
+			inc.id,
+			inc.origin_row,
+			inc.origin_col,
+			event,
 			grabLocalRow,
-			grabLocalCol,
-			grabOffsetX: local ? local.x - originLeft : CELL / 2,
-			grabOffsetY: local ? local.y - originTop : CELL / 2,
-			floatX: originLeft,
-			floatY: originTop,
-			active: false
-		};
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-	}
-
-	function onInclusionPointerMove(event: PointerEvent) {
-		const current = inclusionDrag;
-		if (!current || current.pointerId !== event.pointerId) return;
-		const dist = Math.hypot(event.clientX - current.startX, event.clientY - current.startY);
-		let next = current;
-		if (!next.active && dist > 6) {
-			next = { ...next, active: true };
-			inclusionDrag = next;
-			didDrag = true;
-		}
-		if (!next.active) return;
-
-		const cell = pointerToCell(event.clientX, event.clientY);
-		const unclampedRow = cell ? cell.row - next.grabLocalRow : next.currentOriginRow;
-		const unclampedCol = cell ? cell.col - next.grabLocalCol : next.currentOriginCol;
-		const inc = snippetInclusions.find((item) => item.id === next.inclusionId);
-		const clamped = inc
-			? clampInclusionOrigin(inc, unclampedRow, unclampedCol)
-			: { row: unclampedRow, col: unclampedCol };
-		if (
-			clamped.row !== next.currentOriginRow ||
-			clamped.col !== next.currentOriginCol
-		) {
-			inclusionDrag = {
-				...next,
-				currentOriginRow: clamped.row,
-				currentOriginCol: clamped.col
-			};
-		}
-	}
-
-	function onInclusionPointerUp(event: PointerEvent) {
-		if (!inclusionDrag || inclusionDrag.pointerId !== event.pointerId) return;
-		const snapshot = inclusionDrag;
-		inclusionDrag = null;
-		try {
-			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-		} catch {
-			// already released
-		}
-
-		if (!snapshot.active) {
-			queueMicrotask(() => {
-				didDrag = false;
-			});
-			return;
-		}
-
-		moveInclusion(snapshot.inclusionId, snapshot.currentOriginRow, snapshot.currentOriginCol);
-		queueMicrotask(() => {
-			didDrag = false;
-		});
+			grabLocalCol
+		);
 	}
 
 	function moveButton(buttonId: string, row: number, col: number) {
@@ -1028,8 +998,7 @@
 			updated_at: now
 		};
 		setCurrentBoardButtons([...buttons, button]);
-		selectedButtonId = id;
-		selectedInclusionId = null;
+		selection = { kind: 'button', id };
 		cellMenu = null;
 	}
 
@@ -1038,7 +1007,7 @@
 		if (!button) return;
 
 		setCurrentBoardButtons(buttons.filter((b) => b.id !== button.id));
-		selectedButtonId = null;
+		selection = null;
 		propsError = null;
 	}
 
@@ -1058,8 +1027,7 @@
 			updated_at: now
 		};
 		setSnippetInclusions([...snippetInclusions, inclusion]);
-		selectedInclusionId = inclusion.id;
-		selectedButtonId = null;
+		selection = { kind: 'inclusion', id: inclusion.id };
 		insertSnippetOpen = false;
 		insertSnippetCell = null;
 		cellMenu = null;
@@ -1082,14 +1050,13 @@
 		const inclusion = selectedInclusion;
 		if (!inclusion) return;
 		setSnippetInclusions(snippetInclusions.filter((inc) => inc.id !== inclusion.id));
-		selectedInclusionId = null;
+		selection = null;
 	}
 
 	function openSnippetCanvas(snippetId: string) {
 		setSelectedBoardId(snippetId);
 		fittedBoardId = null;
-		selectedInclusionId = null;
-		selectedButtonId = null;
+		selection = null;
 	}
 
 	function openInsertSnippet(row: number, col: number) {
@@ -1147,8 +1114,7 @@
 	}
 
 	function updateSelectedColor(color: string = colorDraft) {
-		if (!selectedButtonId) return;
-		const button = buttons.find((b) => b.id === selectedButtonId);
+		const button = selectedButton;
 		if (!button) return;
 		const normalized = normalizeHexColor(color);
 		if (!normalized) {
@@ -1180,8 +1146,7 @@
 	}
 
 	function selectNoneColor() {
-		if (!selectedButtonId) return;
-		const button = buttons.find((b) => b.id === selectedButtonId);
+		const button = selectedButton;
 		if (!button) return;
 		if (button.background_color === null && button.palette_color_id === null) return;
 		propsError = null;
@@ -1197,8 +1162,7 @@
 	}
 
 	function selectPaletteColor(paletteColorId: string) {
-		if (!selectedButtonId) return;
-		const button = buttons.find((b) => b.id === selectedButtonId);
+		const button = selectedButton;
 		if (!button) return;
 		const color = paletteColors.find((c) => c.id === paletteColorId);
 		if (!color) return;
@@ -1304,7 +1268,7 @@
 		panPointerId = null;
 		panFromBackground = false;
 		if (shouldClearSelection) {
-			selectedButtonId = null;
+			selection = null;
 		}
 		queueMicrotask(() => {
 			didPan = false;
@@ -1328,7 +1292,7 @@
 		{#if loadingBoards}
 			<p class="text-sm text-slate-500">Loading…</p>
 		{:else}
-			{#if destinationBoards.length === 0}
+			{#if destinationBoards.length === 0 && snippets.length === 0}
 				<button
 					type="button"
 					class="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
@@ -1346,36 +1310,41 @@
 							aria-expanded={open}
 						>
 							<span class="truncate"
-								>{selectedBoard && !isSnippet(selectedBoard)
-									? selectedBoard.displayName
-									: 'Select board'}</span
+								>{selectedBoard ? selectedBoard.displayName : 'Select'}</span
 							>
 							<span class="text-slate-400" aria-hidden="true">{open ? '▴' : '▾'}</span>
 						</button>
 					{/snippet}
 					{#snippet children({ close })}
-						<div class="max-h-64 min-w-56 overflow-y-auto py-1">
-							{#each destinationBoards as board (board.id)}
-								<button
-									type="button"
-									class="flex w-full items-center px-3 py-2 text-left text-sm transition {board.id ===
-									selectedBoardId
-										? 'bg-blue-50 font-medium text-blue-800'
-										: 'text-slate-700 hover:bg-slate-50'}"
-									onclick={() => {
-										setSelectedBoardId(board.id);
-										fittedBoardId = null;
-										close();
-									}}
-								>
-									{board.displayName}
-								</button>
-							{/each}
-						</div>
-						<div class="border-t border-slate-100 p-1">
+						<div class="max-h-80 min-w-56 overflow-y-auto py-1">
+							<p
+								class="px-3 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase"
+							>
+								Boards
+							</p>
+							{#if destinationBoards.length === 0}
+								<p class="px-3 py-1.5 text-sm text-slate-500">No boards yet</p>
+							{:else}
+								{#each destinationBoards as board (board.id)}
+									<button
+										type="button"
+										class="flex w-full items-center px-3 py-2 text-left text-sm transition {board.id ===
+										selectedBoardId
+											? 'bg-blue-50 font-medium text-blue-800'
+											: 'text-slate-700 hover:bg-slate-50'}"
+										onclick={() => {
+											setSelectedBoardId(board.id);
+											fittedBoardId = null;
+											close();
+										}}
+									>
+										{board.displayName}
+									</button>
+								{/each}
+							{/if}
 							<button
 								type="button"
-								class="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
+								class="w-full px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
 								onclick={() => {
 									close();
 									openCreate('board');
@@ -1383,66 +1352,46 @@
 							>
 								+ New board
 							</button>
+							<div class="my-1 border-t border-slate-200"></div>
+							<p
+								class="px-3 pt-1.5 pb-1 text-[11px] font-semibold tracking-wide text-slate-400 uppercase"
+							>
+								Snippets
+							</p>
+							{#if snippets.length === 0}
+								<p class="px-3 py-1.5 text-sm text-slate-500">No snippets yet</p>
+							{:else}
+								{#each snippets as snippet (snippet.id)}
+									<button
+										type="button"
+										class="flex w-full items-center px-3 py-2 text-left text-sm transition {snippet.id ===
+										selectedBoardId
+											? 'bg-blue-50 font-medium text-blue-800'
+											: 'text-slate-700 hover:bg-slate-50'}"
+										onclick={() => {
+											setSelectedBoardId(snippet.id);
+											fittedBoardId = null;
+											close();
+										}}
+									>
+										{snippet.displayName}
+									</button>
+								{/each}
+							{/if}
+							<button
+								type="button"
+								class="w-full px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
+								onclick={() => {
+									close();
+									openCreate('snippet');
+								}}
+							>
+								+ New snippet
+							</button>
 						</div>
 					{/snippet}
 				</Menu>
 			{/if}
-
-			<Menu align="center">
-				{#snippet trigger({ toggle, open })}
-					<button
-						type="button"
-						class="inline-flex min-w-56 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
-						onclick={toggle}
-						aria-expanded={open}
-					>
-						<span class="truncate"
-							>{selectedBoard && isSnippet(selectedBoard)
-								? selectedBoard.displayName
-								: snippets.length === 0
-									? 'Snippets'
-									: 'Select snippet'}</span
-						>
-						<span class="text-slate-400" aria-hidden="true">{open ? '▴' : '▾'}</span>
-					</button>
-				{/snippet}
-				{#snippet children({ close })}
-					<div class="max-h-64 min-w-56 overflow-y-auto py-1">
-						{#if snippets.length === 0}
-							<p class="px-3 py-2 text-sm text-slate-500">No snippets yet</p>
-						{:else}
-							{#each snippets as snippet (snippet.id)}
-								<button
-									type="button"
-									class="flex w-full items-center px-3 py-2 text-left text-sm transition {snippet.id ===
-									selectedBoardId
-										? 'bg-blue-50 font-medium text-blue-800'
-										: 'text-slate-700 hover:bg-slate-50'}"
-									onclick={() => {
-										setSelectedBoardId(snippet.id);
-										fittedBoardId = null;
-										close();
-									}}
-								>
-									{snippet.displayName}
-								</button>
-							{/each}
-						{/if}
-					</div>
-					<div class="border-t border-slate-100 p-1">
-						<button
-							type="button"
-							class="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
-							onclick={() => {
-								close();
-								openCreate('snippet');
-							}}
-						>
-							+ New snippet
-						</button>
-					</div>
-				{/snippet}
-			</Menu>
 
 			{#if selectedBoard}
 			<Menu>
@@ -1525,7 +1474,7 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
-						class="pointer-events-auto relative rounded-2xl border border-slate-300 bg-white p-3 shadow-xl"
+						class="pointer-events-auto relative overflow-visible rounded-2xl border border-slate-300 bg-white p-3 shadow-xl"
 						style={`width: ${boardContentWidth + 24}px; height: ${boardContentHeight + 24}px;`}
 						onclick={(event) => {
 							event.stopPropagation();
@@ -1558,13 +1507,16 @@
 							{/if}
 
 							<div
-								class="absolute"
+								class="absolute overflow-visible"
 								style={`left: ${LABEL_GUTTER}px; top: ${LABEL_GUTTER}px; width: ${boardPixelWidth}px; height: ${boardPixelHeight}px;`}
 							>
 							{#each viewportCells as cell (`${cell.row}:${cell.col}`)}
 								{@const occupying = buttonAtCell.get(`${cell.row}:${cell.col}`)}
 								{@const isDragOrigin =
-									drag?.active && occupying && drag.buttonId === occupying.id}
+									drag?.active &&
+									drag.kind === 'button' &&
+									occupying &&
+									drag.id === occupying.id}
 								{@const coveringInclusion = newestInclusionAt(cell.row, cell.col)}
 								<button
 									type="button"
@@ -1574,12 +1526,11 @@
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
 									aria-label={`Empty cell ${cellRef(cell.row, cell.col)}`}
 									disabled={Boolean(occupying && !isDragOrigin) ||
-										Boolean(drag?.active) ||
-										Boolean(inclusionDrag?.active)}
+										Boolean(drag?.active)}
 									onclick={(event) => {
 										event.stopPropagation();
 										if (occupying && !isDragOrigin) return;
-										if (selectedButtonId || selectedInclusionId) {
+										if (selection) {
 											clearSelection();
 											return;
 										}
@@ -1604,40 +1555,38 @@
 							{/each}
 
 							{#each hostInclusions as inc, paintOrder (inc.id)}
-								{@const originRow =
-									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id
-										? inclusionDrag.currentOriginRow
-										: inc.origin_row}
-								{@const originCol =
-									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id
-										? inclusionDrag.currentOriginCol
-										: inc.origin_col}
-								{@const clip = clippedInclusionRect(inc, originRow, originCol)}
+								{@const rect = inclusionRect(inc)}
 								{@const snippet = snippetForInclusion(inc)}
 								{@const innerButtons = mappedButtonsInInclusion(
 									inc.snippet_id,
-									originRow,
-									originCol
+									inc.origin_row,
+									inc.origin_col
 								)}
 								{@const isDraggingInclusion =
-									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id}
-								{#if clip && snippet}
+									drag?.active && drag.kind === 'inclusion' && drag.id === inc.id}
+								{@const layerLeft =
+									isDraggingInclusion && drag ? drag.floatX : cellLeft(inc.origin_col)}
+								{@const layerTop =
+									isDraggingInclusion && drag ? drag.floatY : cellTop(inc.origin_row)}
+								{#if rect && snippet}
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
-										class="absolute overflow-hidden rounded-lg {selectedInclusionId ===
-										inc.id
-											? 'cursor-grab ring-2 ring-violet-500 ring-offset-1'
-											: 'cursor-grab ring-1 ring-violet-300/70'} {isDraggingInclusion
-											? 'cursor-grabbing'
+										class="absolute rounded-lg bg-slate-500/25 {isSelected(
+											'inclusion',
+											inc.id
+										)
+											? 'cursor-grab ring-2 ring-blue-500 ring-offset-1'
+											: 'cursor-grab'} {isDraggingInclusion
+											? 'cursor-grabbing shadow-lg ring-2 ring-blue-500/40'
 											: ''}"
-										style={`left: ${cellLeft(clip.col)}px; top: ${cellTop(clip.row)}px; width: ${cellSpanSize(clip.width)}px; height: ${cellSpanSize(clip.height)}px; z-index: ${isDraggingInclusion ? 900 : 1 + paintOrder};`}
+										style={`left: ${layerLeft}px; top: ${layerTop}px; width: ${cellSpanSize(rect.width)}px; height: ${cellSpanSize(rect.height)}px; z-index: ${isDraggingInclusion ? 1010 : 1 + paintOrder};`}
 										role="button"
 										tabindex="0"
 										aria-label={`Snippet inclusion ${snippet.displayName} at ${cellRef(inc.origin_row, inc.origin_col)}`}
 										onpointerdown={(event) => onInclusionPointerDown(inc, event)}
-										onpointermove={onInclusionPointerMove}
-										onpointerup={onInclusionPointerUp}
-										onpointercancel={onInclusionPointerUp}
+										onpointermove={onItemPointerMove}
+										onpointerup={onItemPointerUp}
+										onpointercancel={onItemPointerUp}
 										onclick={(event) => selectInclusion(inc, event)}
 										ondblclick={(event) => {
 											event.stopPropagation();
@@ -1645,33 +1594,27 @@
 										}}
 									>
 										{#each innerButtons as mapped (`${mapped.button.id}:${mapped.hostRow}:${mapped.hostCol}`)}
-											{#if mapped.hostRow >= clip.row &&
-												mapped.hostCol >= clip.col &&
-												mapped.hostRow < clip.row + clip.height &&
-												mapped.hostCol < clip.col + clip.width}
-												<div
-													class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-lg border border-slate-300/80 px-2 text-center text-sm font-medium opacity-40"
-													style={`left: ${cellLeft(mapped.hostCol) - cellLeft(clip.col)}px; top: ${cellTop(mapped.hostRow) - cellTop(clip.row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(mapped.button)}; color: ${contrastingTextColor(resolveButtonHex(mapped.button))};`}
-												>
-													<span class="line-clamp-3 break-words">{mapped.button.label}</span>
-												</div>
-											{/if}
+											<div
+												class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-lg border border-slate-300/80 px-2 text-center text-sm font-medium opacity-40"
+												style={`left: ${cellLeft(mapped.hostCol) - cellLeft(inc.origin_col)}px; top: ${cellTop(mapped.hostRow) - cellTop(inc.origin_row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(mapped.button)}; color: ${contrastingTextColor(resolveButtonHex(mapped.button))};`}
+											>
+												<span class="line-clamp-3 break-words">{mapped.button.label}</span>
+											</div>
 										{/each}
 									</div>
 								{/if}
 							{/each}
 
 							{#if drag?.active}
-								{@const dropBlocked = dropTargetBlocked(
-									drag.currentRow,
-									drag.currentCol,
-									drag.buttonId
-								)}
+								{@const preview = dragPreviewRect(drag)}
+								{@const dropBlocked =
+									drag.kind === 'button' &&
+									dropTargetBlocked(drag.currentRow, drag.currentCol, drag.id)}
 								<div
 									class="pointer-events-none absolute z-[1005] rounded-lg {dropBlocked
 										? ''
 										: 'bg-slate-700/25'}"
-									style={`left: ${cellLeft(drag.currentCol)}px; top: ${cellTop(drag.currentRow)}px; width: ${CELL}px; height: ${CELL}px;${
+									style={`left: ${cellLeft(preview.col)}px; top: ${cellTop(preview.row)}px; width: ${cellSpanSize(preview.width)}px; height: ${cellSpanSize(preview.height)}px;${
 										dropBlocked
 											? ' background-image: repeating-linear-gradient(-45deg, rgb(239 68 68 / 0.55), rgb(239 68 68 / 0.55) 5px, rgb(251 146 160 / 0.55) 5px, rgb(251 146 160 / 0.55) 10px);'
 											: ''
@@ -1687,7 +1630,7 @@
 									button.row_index < selectedBoard.height &&
 									button.col_index < selectedBoard.width}
 								{@const isDragging = Boolean(
-									drag?.active && drag.buttonId === button.id
+									drag?.active && drag.kind === 'button' && drag.id === button.id
 								)}
 								{@const buttonLeft = isDragging && drag
 									? drag.floatX
@@ -1699,7 +1642,7 @@
 									type="button"
 									class="absolute z-[1000] flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
 										? 'z-[1010] cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
-										: selectedButtonId === button.id
+										: isSelected('button', button.id)
 											? 'z-[1001] cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
 											: inViewport
 												? 'cursor-grab border-slate-300 shadow-sm transition hover:border-slate-400'
@@ -1707,9 +1650,9 @@
 									style={`left: ${buttonLeft}px; top: ${buttonTop}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(button)}; color: ${contrastingTextColor(resolveButtonHex(button))};`}
 									aria-label={`${button.label.trim() || 'Untitled button'} at ${cellRef(button.row_index, button.col_index)}`}
 									onpointerdown={(event) => onButtonPointerDown(button, event)}
-									onpointermove={onButtonPointerMove}
-									onpointerup={onButtonPointerUp}
-									onpointercancel={onButtonPointerUp}
+									onpointermove={onItemPointerMove}
+									onpointerup={onItemPointerUp}
+									onpointercancel={onItemPointerUp}
 									onclick={(event) => selectButton(button, event)}
 								>
 									<span class="line-clamp-3 break-words pointer-events-none">

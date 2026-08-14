@@ -36,6 +36,9 @@
 	function cellTop(row: number) {
 		return row * (CELL + GAP);
 	}
+	function cellSpanSize(count: number) {
+		return count * CELL + Math.max(0, count - 1) * GAP;
+	}
 	function cellCenter(row: number, col: number) {
 		return {
 			x: LABEL + cellLeft(col) + CELL / 2,
@@ -61,14 +64,14 @@
 </script>
 
 <div
-	class="relative inline-block rounded-lg border bg-white p-2 {deleted
+	class="relative inline-block overflow-visible rounded-lg border bg-white p-2 {deleted
 		? 'border-red-300 opacity-80'
 		: created
 			? 'border-slate-400 border-dashed'
 			: 'border-slate-200'}"
 	style={`width: ${totalW + 16}px;`}
 >
-	<div class="relative" style={`width: ${totalW}px; height: ${totalH}px;`}>
+	<div class="relative overflow-visible" style={`width: ${totalW}px; height: ${totalH}px;`}>
 		{#each Array.from({ length: width }, (_, col) => col) as col (col)}
 			<div
 				class="pointer-events-none absolute flex items-end justify-center pb-0.5 text-[10px] font-semibold text-slate-500"
@@ -87,7 +90,7 @@
 		{/each}
 
 		<div
-			class="absolute"
+			class="absolute overflow-visible"
 			style={`left: ${LABEL}px; top: ${LABEL}px; width: ${gridW}px; height: ${gridH}px;`}
 		>
 			{#each Array.from({ length: height }, (_, row) => row) as row (row)}
@@ -125,6 +128,11 @@
 					<div
 						class="pointer-events-none absolute z-10 rounded-md ring-2 ring-emerald-500 ring-offset-1"
 						style={`left: ${cellLeft(overlay.col)}px; top: ${cellTop(overlay.row)}px; width: ${CELL}px; height: ${CELL}px;`}
+					></div>
+				{:else if overlay.kind === 'insert_snippet'}
+					<div
+						class="pointer-events-none absolute z-10 rounded-md bg-slate-500/25"
+						style={`left: ${cellLeft(overlay.col)}px; top: ${cellTop(overlay.row)}px; width: ${cellSpanSize(overlay.width)}px; height: ${cellSpanSize(overlay.height)}px;`}
 					></div>
 				{/if}
 			{/each}

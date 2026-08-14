@@ -120,6 +120,35 @@ describe('describeChangeSetMutations', () => {
 		]);
 	});
 
+	it('names a newly created Snippet when describing its inclusion', () => {
+		expect(
+			describeChangeSetMutations(
+				[
+					{
+						op: 'create_board',
+						id: 'snip-new',
+						name: 'Quick yes',
+						width: 6,
+						height: 1,
+						kind: 'snippet'
+					},
+					{
+						op: 'create_snippet_inclusion',
+						id: 'inc-new',
+						host_id: 'board-1',
+						snippet_id: 'snip-new',
+						origin_row: 1,
+						origin_col: 0
+					}
+				],
+				ctx
+			)
+		).toEqual([
+			'Create snippet “Quick yes” (6×1)',
+			'Create Snippet Inclusion of “Quick yes” on “Home” at A2'
+		]);
+	});
+
 	it('describes button create, update, and delete with resolved names', () => {
 		expect(
 			describeChangeSetMutations(

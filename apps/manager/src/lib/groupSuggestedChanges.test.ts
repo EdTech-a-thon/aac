@@ -178,6 +178,42 @@ describe('groupSuggestedChanges', () => {
 		if (group?.kind === 'board') {
 			expect(group.summary).toBe('Board “Home”');
 			expect(group.changeLines).toEqual(['Insert snippet “Strip” at B1']);
+			expect(group.overlays).toEqual([
+				{ kind: 'insert_snippet', row: 0, col: 1, width: 6, height: 1 }
+			]);
+		}
+	});
+
+	it('names a newly created Snippet when inserting it on a Board', () => {
+		const groups = groupSuggestedChanges(
+			[
+				{
+					op: 'create_board',
+					id: 'snip-new',
+					name: 'Quick yes',
+					width: 6,
+					height: 1,
+					kind: 'snippet'
+				},
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-new',
+					host_id: 'board-1',
+					snippet_id: 'snip-new',
+					origin_row: 1,
+					origin_col: 0
+				}
+			],
+			ctx
+		);
+
+		const host = groups.find((group) => group.kind === 'board');
+		expect(host?.kind).toBe('board');
+		if (host?.kind === 'board') {
+			expect(host.changeLines).toEqual(['Insert snippet “Quick yes” at A2']);
+			expect(host.overlays).toEqual([
+				{ kind: 'insert_snippet', row: 1, col: 0, width: 6, height: 1 }
+			]);
 		}
 	});
 });

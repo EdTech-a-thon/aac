@@ -2,7 +2,10 @@ import { BUTTON_ACTION_KIND_OPTIONS, type ButtonAction } from './buttonAction';
 import { cellRef, columnLetter, rowNumber } from './boardCellRef';
 import type { ChangeSetMutation } from './changeSetMutations';
 import type { MutationLookupContext } from './describeChangeSetMutations';
-import { describeChangeSetMutations } from './describeChangeSetMutations';
+import {
+	describeChangeSetMutations,
+	lookupWithChangeSetBoards
+} from './describeChangeSetMutations';
 import { projectVocabulary, type ProjectedVocabulary } from './projectVocabulary';
 
 export type PreviewButton = {
@@ -25,6 +28,13 @@ export type PreviewOverlay =
 			fromCol: number;
 			toRow: number;
 			toCol: number;
+	  }
+	| {
+			kind: 'insert_snippet';
+			row: number;
+			col: number;
+			width: number;
+			height: number;
 	  };
 
 export type SuggestedChangeGroup =
@@ -329,6 +339,18 @@ function buildOverlays(
 			continue;
 		}
 
+		if (mutation.op === 'create_snippet_inclusion' && mutation.host_id === boardId) {
+			const snippet = ctx.boards.find((board) => board.id === mutation.snippet_id);
+			overlays.push({
+				kind: 'insert_snippet',
+				row: mutation.origin_row,
+				col: mutation.origin_col,
+				width: snippet?.width ?? 1,
+				height: snippet?.height ?? 1
+			});
+			continue;
+		}
+
 		if (mutation.op !== 'update_button') continue;
 
 		const existing = ctx.buttons.find((b) => b.id === mutation.id);
@@ -405,7 +427,8 @@ export function groupSuggestedChanges(
 	mutations: ChangeSetMutation[],
 	ctx: RichLookupContext
 ): SuggestedChangeGroup[] {
-	const projected = projectVocabulary(liveFromLookup(ctx), mutations);
+	const descriptionCtx = lookupWithChangeSetBoards(ctx, mutations);
+	const projected = projectVocabulary(liveFromLookup(descriptionCtx), mutations);
 	const createdBoardIds = new Set(
 		mutations.filter((m) => m.op === 'create_board').map((m) => m.id)
 	);
@@ -514,8 +537,8 @@ export function groupSuggestedChanges(
 		topLevel[i] = {
 			...group,
 			buttons: previewButtonsOnBoard(projected, group.boardId),
-			overlays: buildOverlays(nested, ctx, group.boardId),
-			changeLines: nested.map((m) => describeScopedChange(m, ctx))
+			overlays: buildOverlays(nested, descriptionCtx, group.boardId),
+			changeLines: nested.map((m) => describeScopedChange(m, descriptionCtx))
 		};
 	}
 
@@ -537,8 +560,8 @@ export function groupSuggestedChanges(
 			height: updateBoard?.height ?? board?.height ?? 1,
 			summary: `${noun} “${name}”`,
 			buttons: previewButtonsOnBoard(projected, boardId),
-			overlays: buildOverlays(boardMutations, ctx, boardId),
-			changeLines: boardMutations.map((m) => describeScopedChange(m, ctx))
+			overlays: buildOverlays(boardMutations, descriptionCtx, boardId),
+			changeLines: boardMutations.map((m) => describeScopedChange(m, descriptionCtx))
 		});
 	}
 

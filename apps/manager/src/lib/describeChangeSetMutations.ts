@@ -42,6 +42,41 @@ function boardName(ctx: MutationLookupContext, boardId: string, fallbackName?: s
 	return 'an unknown board';
 }
 
+function boardsAfterMutations(
+	boards: MutationLookupContext['boards'],
+	mutations: ChangeSetMutation[]
+): MutationLookupContext['boards'] {
+	const byId = new Map(boards.map((board) => [board.id, { ...board }]));
+	for (const mutation of mutations) {
+		if (mutation.op === 'create_board') {
+			byId.set(mutation.id, {
+				id: mutation.id,
+				name: mutation.name,
+				width: mutation.width,
+				height: mutation.height,
+				kind: mutation.kind === 'snippet' ? 'snippet' : 'board'
+			});
+		} else if (mutation.op === 'update_board') {
+			const existing = byId.get(mutation.id);
+			if (!existing) continue;
+			byId.set(mutation.id, {
+				...existing,
+				width: mutation.width ?? existing.width,
+				height: mutation.height ?? existing.height
+			});
+		}
+	}
+	return [...byId.values()];
+}
+
+/** Resolve Boards/Snippets created in the same Change Set, plus resized dimensions. */
+export function lookupWithChangeSetBoards<T extends MutationLookupContext>(
+	ctx: T,
+	mutations: ChangeSetMutation[]
+): T {
+	return { ...ctx, boards: boardsAfterMutations(ctx.boards, mutations) };
+}
+
 function findButton(ctx: MutationLookupContext, buttonId: string) {
 	return ctx.buttons.find((b) => b.id === buttonId);
 }
@@ -91,7 +126,8 @@ export function describeChangeSetMutations(
 	mutations: ChangeSetMutation[],
 	ctx: MutationLookupContext
 ): string[] {
-	return mutations.map((mutation) => describeMutation(mutation, ctx));
+	const lookup = lookupWithChangeSetBoards(ctx, mutations);
+	return mutations.map((mutation) => describeMutation(mutation, lookup));
 }
 
 function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContext): string {
