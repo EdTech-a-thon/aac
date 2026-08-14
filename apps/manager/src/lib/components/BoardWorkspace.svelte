@@ -12,7 +12,7 @@
 		DEFAULT_BUTTON_COLOR,
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
-	import type { Board, BoardButton } from '$lib/types';
+	import { isSnippet, type Board, type BoardButton, type GridKind } from '$lib/types';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
@@ -85,6 +85,7 @@
 	}
 
 	let createOpen = $state(false);
+	let createKind = $state<GridKind>('board');
 	let newBoardName = $state('');
 	let newBoardWidth = $state(6);
 	let newBoardHeight = $state(5);
@@ -141,9 +142,18 @@
 		selectedBoardId ? (buttonsByBoardId[selectedBoardId] ?? []) : []
 	);
 
+	const destinationBoards = $derived(boards.filter((board) => !isSnippet(board)));
+	const snippets = $derived(boards.filter(isSnippet));
+
+	function withGridKind(board: Board): Board {
+		return { ...board, kind: board.kind === 'snippet' ? 'snippet' : 'board' };
+	}
+
 	const selectedBoard = $derived(
 		boards.find((board) => board.id === selectedBoardId) ?? null
 	);
+
+	const selectedGridNoun = $derived(selectedBoard && isSnippet(selectedBoard) ? 'snippet' : 'board');
 
 	const selectedButton = $derived(
 		buttons.find((button) => button.id === selectedButtonId) ?? null
@@ -314,7 +324,7 @@
 
 				replaceEditorLiveFromServer(
 					current,
-					data.boards,
+					data.boards.map(withGridKind),
 					nextButtonsByBoardId,
 					paletteData.paletteColors
 				);
@@ -457,7 +467,8 @@
 		};
 	});
 
-	function openCreate() {
+	function openCreate(kind: GridKind = 'board') {
+		createKind = kind;
 		newBoardName = '';
 		newBoardWidth = 6;
 		newBoardHeight = 5;
@@ -484,6 +495,7 @@
 			displayName: boardDisplayName(name),
 			width,
 			height,
+			kind: createKind,
 			created_at: now,
 			updated_at: now
 		};
@@ -542,7 +554,8 @@
 		}
 		setBoards(nextBoards);
 		setButtonsByBoardId(cleared);
-		setSelectedBoardId(nextBoards[0]?.id ?? null);
+		const sameKind = nextBoards.filter((board) => board.kind === selectedBoard.kind);
+		setSelectedBoardId(sameKind[0]?.id ?? nextBoards[0]?.id ?? null);
 		fittedBoardId = null;
 		deleteOpen = false;
 	}
@@ -945,16 +958,68 @@
 	<div>
 		<div class="relative z-20 flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
 		{#if loadingBoards}
-			<p class="text-sm text-slate-500">Loading boards…</p>
-		{:else if boards.length === 0}
-			<button
-				type="button"
-				class="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
-				onclick={openCreate}
-			>
-				+ Create your first board
-			</button>
+			<p class="text-sm text-slate-500">Loading…</p>
 		{:else}
+			{#if destinationBoards.length === 0}
+				<button
+					type="button"
+					class="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700"
+					onclick={() => openCreate('board')}
+				>
+					+ Create your first board
+				</button>
+			{:else}
+				<Menu align="center">
+					{#snippet trigger({ toggle, open })}
+						<button
+							type="button"
+							class="inline-flex min-w-56 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-blue-300 hover:bg-blue-50"
+							onclick={toggle}
+							aria-expanded={open}
+						>
+							<span class="truncate"
+								>{selectedBoard && !isSnippet(selectedBoard)
+									? selectedBoard.displayName
+									: 'Select board'}</span
+							>
+							<span class="text-slate-400" aria-hidden="true">{open ? '▴' : '▾'}</span>
+						</button>
+					{/snippet}
+					{#snippet children({ close })}
+						<div class="max-h-64 min-w-56 overflow-y-auto py-1">
+							{#each destinationBoards as board (board.id)}
+								<button
+									type="button"
+									class="flex w-full items-center px-3 py-2 text-left text-sm transition {board.id ===
+									selectedBoardId
+										? 'bg-blue-50 font-medium text-blue-800'
+										: 'text-slate-700 hover:bg-slate-50'}"
+									onclick={() => {
+										setSelectedBoardId(board.id);
+										fittedBoardId = null;
+										close();
+									}}
+								>
+									{board.displayName}
+								</button>
+							{/each}
+						</div>
+						<div class="border-t border-slate-100 p-1">
+							<button
+								type="button"
+								class="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
+								onclick={() => {
+									close();
+									openCreate('board');
+								}}
+							>
+								+ New board
+							</button>
+						</div>
+					{/snippet}
+				</Menu>
+			{/if}
+
 			<Menu align="center">
 				{#snippet trigger({ toggle, open })}
 					<button
@@ -963,28 +1028,38 @@
 						onclick={toggle}
 						aria-expanded={open}
 					>
-						<span class="truncate">{selectedBoard?.displayName ?? 'Select board'}</span>
+						<span class="truncate"
+							>{selectedBoard && isSnippet(selectedBoard)
+								? selectedBoard.displayName
+								: snippets.length === 0
+									? 'Snippets'
+									: 'Select snippet'}</span
+						>
 						<span class="text-slate-400" aria-hidden="true">{open ? '▴' : '▾'}</span>
 					</button>
 				{/snippet}
 				{#snippet children({ close })}
 					<div class="max-h-64 min-w-56 overflow-y-auto py-1">
-						{#each boards as board (board.id)}
-							<button
-								type="button"
-								class="flex w-full items-center px-3 py-2 text-left text-sm transition {board.id ===
-								selectedBoardId
-									? 'bg-blue-50 font-medium text-blue-800'
-									: 'text-slate-700 hover:bg-slate-50'}"
-								onclick={() => {
-									setSelectedBoardId(board.id);
-									fittedBoardId = null;
-									close();
-								}}
-							>
-								{board.displayName}
-							</button>
-						{/each}
+						{#if snippets.length === 0}
+							<p class="px-3 py-2 text-sm text-slate-500">No snippets yet</p>
+						{:else}
+							{#each snippets as snippet (snippet.id)}
+								<button
+									type="button"
+									class="flex w-full items-center px-3 py-2 text-left text-sm transition {snippet.id ===
+									selectedBoardId
+										? 'bg-blue-50 font-medium text-blue-800'
+										: 'text-slate-700 hover:bg-slate-50'}"
+									onclick={() => {
+										setSelectedBoardId(snippet.id);
+										fittedBoardId = null;
+										close();
+									}}
+								>
+									{snippet.displayName}
+								</button>
+							{/each}
+						{/if}
 					</div>
 					<div class="border-t border-slate-100 p-1">
 						<button
@@ -992,21 +1067,22 @@
 							class="w-full rounded-md px-3 py-2 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
 							onclick={() => {
 								close();
-								openCreate();
+								openCreate('snippet');
 							}}
 						>
-							+ New board
+							+ New snippet
 						</button>
 					</div>
 				{/snippet}
 			</Menu>
 
+			{#if selectedBoard}
 			<Menu>
 				{#snippet trigger({ toggle })}
 					<button
 						type="button"
 						class="rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-						aria-label="Board options"
+						aria-label={isSnippet(selectedBoard) ? 'Snippet options' : 'Board options'}
 						onclick={toggle}
 					>
 						⋯
@@ -1021,7 +1097,7 @@
 							openRename();
 						}}
 					>
-						Rename board
+						Rename {selectedGridNoun}
 					</button>
 					<button
 						type="button"
@@ -1031,10 +1107,11 @@
 							openDelete();
 						}}
 					>
-						Delete board
+						Delete {selectedGridNoun}
 					</button>
 				{/snippet}
 			</Menu>
+			{/if}
 		{/if}
 		</div>
 		{#if error}
@@ -1049,7 +1126,7 @@
 			<div
 				bind:this={canvasEl}
 				role="application"
-				aria-label="Board canvas"
+				aria-label={selectedBoard && isSnippet(selectedBoard) ? 'Snippet canvas' : 'Board canvas'}
 				class="relative min-h-0 overflow-hidden bg-slate-100 {spaceDown || isPanning
 					? 'cursor-grab'
 					: 'cursor-default'} {isPanning ? 'cursor-grabbing' : ''}"
@@ -1229,7 +1306,7 @@
 			<aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
 				<div class="border-b border-slate-100 px-4 py-3">
 					<h2 class="text-sm font-semibold text-slate-900">
-						{selectedButton ? 'Button' : 'Board'}
+						{selectedButton ? 'Button' : selectedGridNoun === 'snippet' ? 'Snippet' : 'Board'}
 					</h2>
 				</div>
 
@@ -1313,7 +1390,7 @@
 							buttonId={selectedButton.id}
 							action={selectedButton.action ?? null}
 							label={selectedButton.label}
-							boards={boards}
+							boards={destinationBoards}
 							currentBoardId={selectedBoardId}
 							onChange={updateSelectedAction}
 						/>
@@ -1381,20 +1458,20 @@
 					</div>
 				{:else}
 					<div class="flex flex-1 items-center justify-center p-6">
-						<p class="text-center text-sm text-slate-500">Select a board to edit.</p>
+						<p class="text-center text-sm text-slate-500">Select a board or snippet to edit.</p>
 					</div>
 				{/if}
 			</aside>
 		</div>
 	{:else if !loadingBoards}
 		<div class="flex min-h-0 items-center justify-center p-8">
-			<p class="text-sm text-slate-500">Create a board to start editing.</p>
+			<p class="text-sm text-slate-500">Create a board or snippet to start editing.</p>
 		</div>
 	{/if}
 
 </div>
 
-<Modal bind:open={createOpen} title="New board">
+<Modal bind:open={createOpen} title={createKind === 'snippet' ? 'New snippet' : 'New board'}>
 	<form class="space-y-4" id="create-board-form" onsubmit={createBoard}>
 		<label class="block space-y-1.5">
 			<span class="text-sm font-medium text-slate-700">Name</span>
@@ -1449,7 +1526,7 @@
 	{/snippet}
 </Modal>
 
-<Modal bind:open={renameOpen} title="Rename board">
+<Modal bind:open={renameOpen} title={selectedGridNoun === 'snippet' ? 'Rename snippet' : 'Rename board'}>
 	<form class="space-y-4" id="rename-board-form" onsubmit={renameBoard}>
 		<label class="block space-y-1.5">
 			<span class="text-sm font-medium text-slate-700">Name</span>
@@ -1482,10 +1559,10 @@
 	{/snippet}
 </Modal>
 
-<Modal bind:open={deleteOpen} title="Delete board">
+<Modal bind:open={deleteOpen} title={selectedGridNoun === 'snippet' ? 'Delete snippet' : 'Delete board'}>
 	<div class="space-y-3">
 		<p class="text-sm text-slate-600">
-			Delete “{selectedBoard?.displayName ?? 'Untitled'}”? This cannot be undone.
+			Delete {selectedGridNoun} “{selectedBoard?.displayName ?? 'Untitled'}”? This cannot be undone.
 		</p>
 		{#if deleteError}
 			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{deleteError}</p>

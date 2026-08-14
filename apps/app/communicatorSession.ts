@@ -31,6 +31,7 @@ export type LiveBoard = {
   displayName: string;
   width: number;
   height: number;
+  kind?: "board" | "snippet";
   created_at: string;
   updated_at: string;
   buttons: LiveButton[];
@@ -81,9 +82,14 @@ function messageBarText(phrases: string[]): string {
   return phrases.join(" ");
 }
 
+export function isDestinationBoard(board: { kind?: "board" | "snippet" }): boolean {
+  return board.kind !== "snippet";
+}
+
 export function homeBoard(boards: LiveBoard[]): LiveBoard | null {
-  if (boards.length === 0) return null;
-  return [...boards].sort((a, b) => {
+  const destinations = boards.filter(isDestinationBoard);
+  if (destinations.length === 0) return null;
+  return [...destinations].sort((a, b) => {
     const byTime = a.created_at.localeCompare(b.created_at);
     if (byTime !== 0) return byTime;
     return a.id.localeCompare(b.id);
@@ -167,7 +173,7 @@ export function createCommunicatorSession(speech: SpeechAdapter) {
     }
     if (action.kind === "open_board") {
       const next = snapshot?.boards.find((board) => board.id === action.board_id);
-      if (next) currentBoard = next;
+      if (next && isDestinationBoard(next)) currentBoard = next;
       return;
     }
     if (action.kind === "clear_message_bar") {

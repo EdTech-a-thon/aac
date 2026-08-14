@@ -1,0 +1,3 @@
+# Snippets are stored as flagged Boards
+
+Managers should get almost the same editor and Change Set paths for Snippets as for Boards, so Snippets are persisted as Boards with a kind flag rather than a separate table. They remain a distinct domain concept: never a Home Board, never an Open Board target, edited on their own canvas. Communicator snapshots and destination pickers must exclude them. A separate Snippet table was rejected because viewport, Buttons, Snippet Inclusions, and the grid editor would be duplicated and drift. The glossary still does not call a Snippet a Board — the flag is storage, not language.

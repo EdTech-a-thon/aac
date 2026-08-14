@@ -335,6 +335,86 @@ describe("Communicator Usage list and live snapshot", () => {
     expect("mutations" in live.body.snapshot).toBe(false);
   });
 
+  it("a blank Vocabulary live snapshot has no Snippets", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const communicator = await createTestUser();
+    const vocabulary = await createManagedVocabulary(
+      app,
+      manager.accessToken,
+      "Blank live",
+    );
+    await addCommunicator(app, manager.accessToken, vocabulary.id, communicator.email);
+
+    const live = await apiJson<{
+      snapshot: { boards: { id: string; kind?: string }[] };
+    }>(app, `/vocabularies/${vocabulary.id}/live`, {
+      accessToken: communicator.accessToken,
+    });
+    expect(live.status).toBe(200);
+    expect(live.body.snapshot.boards).toEqual([]);
+  });
+
+  it("includes Snippets in the live snapshot with kind snippet", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const communicator = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken, "Snips");
+    await addCommunicator(app, manager.accessToken, vocabulary.id, communicator.email);
+
+    const snippetId = randomUUID();
+    const buttonId = randomUUID();
+    const submitted = await apiJson(app, `/vocabularies/${vocabulary.id}/change-sets`, {
+      method: "POST",
+      accessToken: manager.accessToken,
+      body: {
+        status: "applied",
+        mutations: [
+          {
+            op: "create_board",
+            id: snippetId,
+            name: "Common actions",
+            width: 6,
+            height: 1,
+            kind: "snippet",
+          },
+          {
+            op: "create_button",
+            id: buttonId,
+            board_id: snippetId,
+            row_index: 0,
+            col_index: 0,
+            label: "Go",
+            action: { kind: "insert_phrase", phrase: "go" },
+          },
+        ],
+      },
+    });
+    expect(submitted.status).toBe(201);
+
+    const live = await apiJson<{
+      snapshot: {
+        boards: {
+          id: string;
+          kind?: string;
+          name: string;
+          buttons: { id: string }[];
+        }[];
+      };
+    }>(app, `/vocabularies/${vocabulary.id}/live`, {
+      accessToken: communicator.accessToken,
+    });
+    expect(live.status).toBe(200);
+    expect(live.body.snapshot.boards).toEqual([
+      expect.objectContaining({
+        id: snippetId,
+        name: "Common actions",
+        kind: "snippet",
+      }),
+    ]);
+    expect(live.body.snapshot.boards[0]?.buttons.map((b) => b.id)).toEqual([buttonId]);
+  });
+
   it("denies the live snapshot without Usage, including Management-only", async () => {
     const app = testApp();
     const manager = await createTestUser();

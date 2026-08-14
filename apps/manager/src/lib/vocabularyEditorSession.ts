@@ -51,7 +51,8 @@ function toBoardSnapshot(board: Board): BoardSnapshot {
 		id: board.id,
 		name: board.name,
 		width: board.width,
-		height: board.height
+		height: board.height,
+		kind: board.kind
 	};
 }
 

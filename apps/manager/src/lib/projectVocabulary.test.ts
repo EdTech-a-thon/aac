@@ -19,6 +19,7 @@ function board(partial: Partial<Board> & Pick<Board, 'id'>): Board {
 		displayName: 'Home',
 		width: 2,
 		height: 2,
+		kind: 'board',
 		created_at: '2026-01-01T00:00:00.000Z',
 		updated_at: '2026-01-01T00:00:00.000Z',
 		...partial
@@ -79,9 +80,116 @@ describe('projectVocabulary', () => {
 				name: 'Food',
 				displayName: 'Food',
 				width: 3,
-				height: 4
+				height: 4,
+				kind: 'board'
 			})
 		]);
+	});
+
+	it('adds a Snippet from create_board with kind snippet', () => {
+		const projected = projectVocabulary(live(), [
+			{
+				op: 'create_board',
+				id: 'snip-1',
+				name: 'Common actions',
+				width: 6,
+				height: 1,
+				kind: 'snippet'
+			}
+		]);
+
+		expect(projected.boards).toEqual([
+			expect.objectContaining({
+				id: 'snip-1',
+				name: 'Common actions',
+				displayName: 'Common actions',
+				width: 6,
+				height: 1,
+				kind: 'snippet'
+			})
+		]);
+	});
+
+	it('shows a blank Snippet name as Untitled', () => {
+		const projected = projectVocabulary(live(), [
+			{ op: 'create_board', id: 'snip-1', name: '  ', width: 2, height: 1, kind: 'snippet' }
+		]);
+
+		expect(projected.boards[0]?.displayName).toBe('Untitled');
+	});
+
+	it('updates and deletes a Snippet the same way as a Board, including its Buttons', () => {
+		const afterUpdate = projectVocabulary(
+			live({
+				boards: [board({ id: 'snip-1', name: 'Strip', displayName: 'Strip', kind: 'snippet' })],
+				buttons: [button({ id: 'btn-1', board_id: 'snip-1', label: 'go' })]
+			}),
+			[{ op: 'update_board', id: 'snip-1', name: 'Actions', width: 6, height: 1 }]
+		);
+		expect(afterUpdate.boards).toEqual([
+			expect.objectContaining({
+				id: 'snip-1',
+				kind: 'snippet',
+				name: 'Actions',
+				displayName: 'Actions',
+				width: 6,
+				height: 1
+			})
+		]);
+
+		const afterDelete = projectVocabulary(afterUpdate, [{ op: 'delete_board', id: 'snip-1' }]);
+		expect(afterDelete.boards).toEqual([]);
+		expect(afterDelete.buttons).toEqual([]);
+	});
+
+	it('clears an Open Board Action that targets a Snippet', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'board-1' }),
+					board({ id: 'snip-1', name: 'Strip', displayName: 'Strip', kind: 'snippet' })
+				],
+				buttons: [
+					button({
+						id: 'btn-1',
+						action: { kind: 'open_board', board_id: 'snip-1' }
+					})
+				]
+			}),
+			[
+				{
+					op: 'update_button',
+					id: 'btn-1',
+					action: { kind: 'open_board', board_id: 'snip-1' }
+				}
+			]
+		);
+
+		expect(projected.buttons[0]?.action).toBeNull();
+	});
+
+	it('does not persist a new Open Board Action that targets a Snippet', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'board-1' }),
+					board({ id: 'snip-1', name: 'Strip', displayName: 'Strip', kind: 'snippet' })
+				]
+			}),
+			[
+				{
+					op: 'create_button',
+					id: 'btn-1',
+					board_id: 'board-1',
+					row_index: 0,
+					col_index: 0,
+					label: 'go',
+					action: { kind: 'open_board', board_id: 'snip-1' }
+				}
+			]
+		);
+
+		expect(projected.buttons[0]?.action).toBeNull();
 	});
 
 	it('updates a Board from update_board', () => {

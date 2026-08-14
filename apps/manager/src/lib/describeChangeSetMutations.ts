@@ -3,7 +3,7 @@ import { cellRef, columnLetter, rowNumber } from './boardCellRef';
 import type { ChangeSetMutation } from './changeSetMutations';
 
 export type MutationLookupContext = {
-	boards: { id: string; name: string; width: number; height: number }[];
+	boards: { id: string; name: string; width: number; height: number; kind?: 'board' | 'snippet' }[];
 	buttons: {
 		id: string;
 		board_id: string;
@@ -13,6 +13,10 @@ export type MutationLookupContext = {
 	}[];
 	paletteColors: { id: string; name: string; hex: string }[];
 };
+
+function gridNoun(kind?: 'board' | 'snippet') {
+	return kind === 'snippet' ? 'snippet' : 'board';
+}
 
 function displayName(name: string | null | undefined) {
 	const trimmed = name?.trim();
@@ -86,7 +90,7 @@ export function describeChangeSetMutations(
 function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContext): string {
 	switch (mutation.op) {
 		case 'create_board':
-			return `Create board “${displayName(mutation.name)}” (${mutation.width}×${mutation.height})`;
+			return `Create ${gridNoun(mutation.kind)} “${displayName(mutation.name)}” (${mutation.width}×${mutation.height})`;
 		case 'update_board': {
 			const parts: string[] = [];
 			if (mutation.name !== undefined) parts.push(`rename to “${displayName(mutation.name)}”`);
@@ -103,10 +107,11 @@ function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContex
 				}
 			}
 			const detail = parts.length > 0 ? `: ${parts.join('; ')}` : '';
-			return `Update board ${boardName(ctx, mutation.id)}${detail}`;
+			const existing = ctx.boards.find((b) => b.id === mutation.id);
+			return `Update ${gridNoun(existing?.kind)} ${boardName(ctx, mutation.id)}${detail}`;
 		}
 		case 'delete_board':
-			return `Delete board ${boardName(ctx, mutation.id)}`;
+			return `Delete ${gridNoun(ctx.boards.find((b) => b.id === mutation.id)?.kind)} ${boardName(ctx, mutation.id)}`;
 		case 'create_button': {
 			const parts = [
 				`Create ${buttonPhrase(mutation.label)} on ${boardName(ctx, mutation.board_id)} at ${cellRef(mutation.row_index, mutation.col_index)}`

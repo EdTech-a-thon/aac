@@ -51,6 +51,36 @@ describe('describeChangeSetMutations', () => {
 		]);
 	});
 
+	it('describes Snippet create, update, and delete', () => {
+		expect(
+			describeChangeSetMutations(
+				[
+					{
+						op: 'create_board',
+						id: 'snip-new',
+						name: 'Common actions',
+						width: 6,
+						height: 1,
+						kind: 'snippet'
+					},
+					{ op: 'update_board', id: 'snip-1', name: 'Actions' },
+					{ op: 'delete_board', id: 'snip-1' }
+				],
+				{
+					...ctx,
+					boards: [
+						...ctx.boards,
+						{ id: 'snip-1', name: 'Strip', width: 6, height: 1, kind: 'snippet' }
+					]
+				}
+			)
+		).toEqual([
+			'Create snippet “Common actions” (6×1)',
+			'Update snippet “Strip”: rename to “Actions”',
+			'Delete snippet “Strip”'
+		]);
+	});
+
 	it('describes button create, update, and delete with resolved names', () => {
 		expect(
 			describeChangeSetMutations(

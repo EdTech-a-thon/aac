@@ -343,9 +343,7 @@
 						</article>
 					{:else if group.kind === 'board'}
 						<article class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
-							<h2 class="text-sm font-semibold text-slate-900">
-								Board “{group.name}”
-							</h2>
+							<h2 class="text-sm font-semibold text-slate-900">{group.summary}</h2>
 							<SuggestedBoardPreview
 								width={group.width}
 								height={group.height}

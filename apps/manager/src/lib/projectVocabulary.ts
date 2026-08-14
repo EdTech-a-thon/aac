@@ -13,6 +13,21 @@ function boardDisplayName(name: string) {
 	return trimmed ? trimmed : 'Untitled';
 }
 
+function isSnippetId(projected: ProjectedVocabulary, id: string) {
+	return projected.boards.some((board) => board.id === id && board.kind === 'snippet');
+}
+
+function persistableAction(
+	projected: ProjectedVocabulary,
+	action: BoardButton['action'] | undefined
+): BoardButton['action'] {
+	if (action === undefined) return null;
+	if (action?.kind === 'open_board' && isSnippetId(projected, action.board_id)) {
+		return null;
+	}
+	return action;
+}
+
 function applyButtonColorXor(
 	target: BoardButton,
 	mutation: { background_color?: string | null; palette_color_id?: string | null }
@@ -52,6 +67,7 @@ export function projectVocabulary(
 				displayName: boardDisplayName(mutation.name),
 				width: mutation.width,
 				height: mutation.height,
+				kind: mutation.kind === 'snippet' ? 'snippet' : 'board',
 				created_at: now,
 				updated_at: now
 			});
@@ -94,7 +110,10 @@ export function projectVocabulary(
 				label: mutation.label,
 				palette_color_id: null,
 				background_color: null,
-				action: mutation.action !== undefined ? mutation.action : null,
+				action: persistableAction(
+					projected,
+					mutation.action !== undefined ? mutation.action : null
+				),
 				created_at: now,
 				updated_at: now
 			};
@@ -116,7 +135,9 @@ export function projectVocabulary(
 			if (mutation.row_index !== undefined) existing.row_index = mutation.row_index;
 			if (mutation.col_index !== undefined) existing.col_index = mutation.col_index;
 			if (mutation.label !== undefined) existing.label = mutation.label;
-			if (mutation.action !== undefined) existing.action = mutation.action;
+			if (mutation.action !== undefined) {
+				existing.action = persistableAction(projected, mutation.action);
+			}
 			applyButtonColorXor(existing, mutation);
 			existing.updated_at = now;
 			continue;

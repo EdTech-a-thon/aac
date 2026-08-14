@@ -14,6 +14,7 @@ type Board = {
   name: string;
   width: number;
   height: number;
+  kind?: "board" | "snippet";
   created_at: string;
   updated_at: string;
 };
@@ -266,7 +267,7 @@ vocabularyRoutes.get("/:id/live", async (c) => {
   const [boardsResult, paletteResult, revisionResult] = await Promise.all([
     supabase
       .from("boards")
-      .select("id, vocabulary_id, name, width, height, created_at, updated_at")
+      .select("id, vocabulary_id, name, width, height, kind, created_at, updated_at")
       .eq("vocabulary_id", id)
       .order("created_at", { ascending: true }),
     supabase
@@ -388,7 +389,7 @@ vocabularyRoutes.get("/:id/boards", async (c) => {
 
   const { data, error } = await supabase
     .from("boards")
-    .select("id, vocabulary_id, name, width, height, created_at, updated_at")
+    .select("id, vocabulary_id, name, width, height, kind, created_at, updated_at")
     .eq("vocabulary_id", id)
     .order("created_at", { ascending: true });
 

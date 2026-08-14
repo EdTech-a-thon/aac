@@ -115,6 +115,39 @@ describe("Communicator session", () => {
     expect(session.getState().currentBoard?.id).toBe("b-home-a");
   });
 
+  it("ignores Snippets when choosing Home Board, even if a Snippet was created first", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          {
+            ...board({ id: "snip", created_at: "2026-01-01T00:00:00Z", name: "Strip" }),
+            kind: "snippet",
+          },
+          board({ id: "home", created_at: "2026-01-02T00:00:00Z", name: "Home" }),
+        ],
+      }),
+    );
+    expect(session.getState().phase).toBe("board");
+    expect(session.getState().currentBoard?.id).toBe("home");
+  });
+
+  it("opens an empty Vocabulary when only Snippets exist", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          {
+            ...board({ id: "snip", name: "Strip" }),
+            kind: "snippet",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().phase).toBe("empty-vocabulary");
+    expect(session.getState().currentBoard).toBeNull();
+  });
+
   it("opens an empty Vocabulary with no Home Board", () => {
     const session = createCommunicatorSession(speechSpy());
     session.open(snapshot({ boards: [] }));
@@ -267,6 +300,34 @@ describe("Communicator session", () => {
     session.tap(0, 1);
     expect(session.getState().currentBoard?.id).toBe("food");
     expect(session.getState().messageBar).toEqual(["I"]);
+  });
+
+  it("Open Board to a Snippet does not change the current Board", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "home",
+            buttons: [
+              button({
+                id: "go",
+                board_id: "home",
+                row_index: 0,
+                col_index: 0,
+                action: { kind: "open_board", board_id: "snip" },
+              }),
+            ],
+          }),
+          {
+            ...board({ id: "snip", name: "Strip" }),
+            kind: "snippet",
+          },
+        ],
+      }),
+    );
+    session.tap(0, 0);
+    expect(session.getState().currentBoard?.id).toBe("home");
   });
 
   it("Play YouTube Clip and missing Action are no-ops", () => {

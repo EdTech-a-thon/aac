@@ -9,6 +9,7 @@ type Board = {
   name: string;
   width: number;
   height: number;
+  kind?: "board" | "snippet";
 };
 type ButtonAction =
   | { kind: "insert_phrase"; phrase: string }
@@ -106,6 +107,76 @@ describe("Change Sets HTTP API", () => {
         height: 2,
       }),
     ]);
+  });
+
+  it("Manager can create a Snippet and cannot Open Board to it", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken, "CS Snippet");
+
+    const snippetId = randomUUID();
+    const homeId = randomUUID();
+    const buttonId = randomUUID();
+    const created = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            { op: "create_board", id: homeId, name: "Home", width: 2, height: 2 },
+            {
+              op: "create_board",
+              id: snippetId,
+              name: "Strip",
+              width: 6,
+              height: 1,
+              kind: "snippet",
+            },
+          ],
+        },
+      },
+    );
+    expect(created.status).toBe(201);
+
+    const boards = await apiJson<{ boards: Board[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards`,
+      { accessToken: manager.accessToken },
+    );
+    expect(boards.status).toBe(200);
+    expect(boards.body.boards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: homeId, kind: "board" }),
+        expect.objectContaining({ id: snippetId, name: "Strip", kind: "snippet" }),
+      ]),
+    );
+
+    const rejected = await apiJson<{ error?: string }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            {
+              op: "create_button",
+              id: buttonId,
+              board_id: homeId,
+              row_index: 0,
+              col_index: 0,
+              label: "Go",
+              action: { kind: "open_board", board_id: snippetId },
+            },
+          ],
+        },
+      },
+    );
+    expect(rejected.status).toBeGreaterThanOrEqual(400);
   });
 
   it("Suggested Change Set does not change live boards until applied", async () => {

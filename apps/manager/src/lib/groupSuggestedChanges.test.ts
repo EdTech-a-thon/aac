@@ -99,4 +99,55 @@ describe('groupSuggestedChanges', () => {
 			expect(palette.changeLines[0]).toContain('Verbs');
 		}
 	});
+
+	it('describes creating a Snippet as a snippet, not a board', () => {
+		const groups = groupSuggestedChanges(
+			[
+				{
+					op: 'create_board',
+					id: 'snip-new',
+					name: 'Common actions',
+					width: 6,
+					height: 1,
+					kind: 'snippet'
+				}
+			],
+			ctx
+		);
+
+		expect(groups).toHaveLength(1);
+		const created = groups[0];
+		expect(created?.kind).toBe('create_board');
+		if (created?.kind === 'create_board') {
+			expect(created.summary).toBe('Create snippet “Common actions” (6×1)');
+		}
+	});
+
+	it('groups Snippet Button edits under a snippet heading', () => {
+		const groups = groupSuggestedChanges(
+			[{ op: 'update_button', id: 'btn-s', label: 'home' }],
+			{
+				...ctx,
+				boards: [{ id: 'snip-1', name: 'Strip', width: 6, height: 1, kind: 'snippet' }],
+				buttons: [
+					{
+						id: 'btn-s',
+						board_id: 'snip-1',
+						label: 'go',
+						row_index: 0,
+						col_index: 0,
+						background_color: null,
+						palette_color_id: null
+					}
+				]
+			}
+		);
+
+		expect(groups).toHaveLength(1);
+		const group = groups[0];
+		expect(group?.kind).toBe('board');
+		if (group?.kind === 'board') {
+			expect(group.summary).toBe('Snippet “Strip”');
+		}
+	});
 });

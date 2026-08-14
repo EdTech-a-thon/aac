@@ -5,6 +5,7 @@ export type BoardSnapshot = {
 	name: string;
 	width: number;
 	height: number;
+	kind?: 'board' | 'snippet';
 };
 
 export type ButtonSnapshot = {
@@ -33,6 +34,7 @@ export type ChangeSetMutation =
 			name: string;
 			width: number;
 			height: number;
+			kind?: 'board' | 'snippet';
 	  }
 	| {
 			op: 'update_board';
@@ -84,7 +86,7 @@ export type ChangeSetMutation =
 	| { op: 'delete_palette_color'; id: string };
 
 function boardKey(board: BoardSnapshot) {
-	return `${board.name}\0${board.width}\0${board.height}`;
+	return `${board.name}\0${board.width}\0${board.height}\0${board.kind ?? 'board'}`;
 }
 
 function buttonKey(button: ButtonSnapshot) {
@@ -107,13 +109,15 @@ export function diffBoardButtonMutations(
 	for (const board of currentBoards) {
 		const base = baseBoardMap.get(board.id);
 		if (!base) {
-			mutations.push({
+			const create: Extract<ChangeSetMutation, { op: 'create_board' }> = {
 				op: 'create_board',
 				id: board.id,
 				name: board.name,
 				width: board.width,
 				height: board.height
-			});
+			};
+			if (board.kind === 'snippet') create.kind = 'snippet';
+			mutations.push(create);
 		} else if (boardKey(base) !== boardKey(board)) {
 			const update: Extract<ChangeSetMutation, { op: 'update_board' }> = {
 				op: 'update_board',

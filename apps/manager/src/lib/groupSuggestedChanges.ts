@@ -58,6 +58,7 @@ export type SuggestedChangeGroup =
 			name: string;
 			width: number;
 			height: number;
+			summary: string;
 			buttons: PreviewButton[];
 			overlays: PreviewOverlay[];
 			changeLines: string[];
@@ -76,6 +77,10 @@ export type RichLookupContext = MutationLookupContext & {
 		}
 	>;
 };
+
+function gridNoun(kind?: 'board' | 'snippet') {
+	return kind === 'snippet' ? 'snippet' : 'board';
+}
 
 function displayName(name: string | null | undefined) {
 	const trimmed = name?.trim();
@@ -144,7 +149,7 @@ export function describeScopedChange(
 					parts.push(`Set height to ${mutation.height}`);
 				}
 			}
-			return parts.length > 0 ? parts.join('; ') : 'Update board';
+			return parts.length > 0 ? parts.join('; ') : `Update ${gridNoun(ctx.boards.find((b) => b.id === mutation.id)?.kind)}`;
 		}
 		case 'create_button': {
 			const parts = [
@@ -169,7 +174,7 @@ export function describeScopedChange(
 			const parts: string[] = [];
 			if (mutation.board_id !== undefined) {
 				const dest = ctx.boards.find((b) => b.id === mutation.board_id);
-				parts.push(`move to board “${displayName(dest?.name)}”`);
+				parts.push(`move to ${gridNoun(dest?.kind)} “${displayName(dest?.name)}”`);
 			}
 			if (mutation.row_index !== undefined && mutation.col_index !== undefined) {
 				parts.push(`move to ${cellRef(mutation.row_index, mutation.col_index)}`);
@@ -233,10 +238,11 @@ function liveFromLookup(ctx: RichLookupContext): ProjectedVocabulary {
 			displayName: displayName(b.name),
 			width: b.width,
 			height: b.height,
+			kind: b.kind === 'snippet' ? 'snippet' : 'board',
 			created_at: '',
 			updated_at: ''
 		})),
-		buttons: ctx.buttons.map((b) => ({
+		buttons: ctx.buttons.map((b: RichLookupContext['buttons'][number]) => ({
 			id: b.id,
 			board_id: b.board_id,
 			row_index: b.row_index,
@@ -394,7 +400,8 @@ export function groupSuggestedChanges(
 
 	for (const mutation of mutations) {
 		switch (mutation.op) {
-			case 'create_board':
+			case 'create_board': {
+				const noun = gridNoun(mutation.kind);
 				topLevel.push({
 					kind: 'create_board',
 					key: `create-board-${mutation.id}`,
@@ -402,14 +409,16 @@ export function groupSuggestedChanges(
 					name: displayName(mutation.name),
 					width: mutation.width,
 					height: mutation.height,
-					summary: `Create board “${displayName(mutation.name)}” (${mutation.width}×${mutation.height})`,
+					summary: `Create ${noun} “${displayName(mutation.name)}” (${mutation.width}×${mutation.height})`,
 					buttons: [],
 					overlays: [],
 					changeLines: []
 				});
 				break;
+			}
 			case 'delete_board': {
 				const board = ctx.boards.find((b) => b.id === mutation.id);
+				const noun = gridNoun(board?.kind);
 				topLevel.push({
 					kind: 'delete_board',
 					key: `delete-board-${mutation.id}`,
@@ -420,8 +429,8 @@ export function groupSuggestedChanges(
 					buttons: ctx.buttons
 						.filter((b) => b.board_id === mutation.id)
 						.map(toPreviewButton),
-					summary: `Delete board “${displayName(board?.name)}”`,
-					changeLines: ['Remove this board and its buttons']
+					summary: `Delete ${noun} “${displayName(board?.name)}”`,
+					changeLines: [`Remove this ${noun} and its buttons`]
 				});
 				break;
 			}
@@ -481,13 +490,16 @@ export function groupSuggestedChanges(
 		const updateBoard = boardMutations.find(
 			(m): m is Extract<ChangeSetMutation, { op: 'update_board' }> => m.op === 'update_board'
 		);
+		const name = displayName(updateBoard?.name ?? board?.name);
+		const noun = board?.kind === 'snippet' ? 'Snippet' : 'Board';
 		boardGroups.push({
 			kind: 'board',
 			key: `board-${boardId}`,
 			boardId,
-			name: displayName(updateBoard?.name ?? board?.name),
+			name,
 			width: updateBoard?.width ?? board?.width ?? 1,
 			height: updateBoard?.height ?? board?.height ?? 1,
+			summary: `${noun} “${name}”`,
 			buttons: previewButtonsOnBoard(projected, boardId),
 			overlays: buildOverlays(boardMutations, ctx, boardId),
 			changeLines: boardMutations.map((m) => describeScopedChange(m, ctx))

@@ -67,4 +67,24 @@ describe('diffBoardButtonMutations Action', () => {
 			}
 		]);
 	});
+
+	it('emits kind snippet on create_board for a Snippet', () => {
+		expect(
+			diffBoardButtonMutations(
+				[],
+				[],
+				[{ id: 'snip-1', name: 'Strip', width: 6, height: 1, kind: 'snippet' }],
+				[]
+			)
+		).toEqual([
+			{
+				op: 'create_board',
+				id: 'snip-1',
+				name: 'Strip',
+				width: 6,
+				height: 1,
+				kind: 'snippet'
+			}
+		]);
+	});
 });

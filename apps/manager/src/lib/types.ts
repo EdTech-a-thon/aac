@@ -10,6 +10,12 @@ export type Vocabulary = {
 	updated_at: string;
 };
 
+export type GridKind = 'board' | 'snippet';
+
+export function isSnippet(board: { kind?: GridKind }): boolean {
+	return board.kind === 'snippet';
+}
+
 export type Board = {
 	id: string;
 	vocabulary_id: string;
@@ -17,6 +23,7 @@ export type Board = {
 	displayName: string;
 	width: number;
 	height: number;
+	kind: GridKind;
 	created_at: string;
 	updated_at: string;
 };
