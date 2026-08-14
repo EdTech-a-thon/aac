@@ -56,6 +56,16 @@ type PaletteColor = {
   updated_at: string;
 };
 
+type SnippetInclusion = {
+  id: string;
+  host_id: string;
+  snippet_id: string;
+  origin_row: number;
+  origin_col: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type ManagerProfile = {
   id: string;
   email: string;
@@ -293,18 +303,32 @@ vocabularyRoutes.get("/:id/live", async (c) => {
   const boards = (boardsResult.data ?? []) as Board[];
   const boardIds = boards.map((board) => board.id);
   let buttons: Button[] = [];
+  let snippetInclusions: SnippetInclusion[] = [];
   if (boardIds.length > 0) {
-    const buttonsResult = await supabase
-      .from("buttons")
-      .select(
-        "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, created_at, updated_at",
-      )
-      .in("board_id", boardIds)
-      .order("created_at", { ascending: true });
+    const [buttonsResult, inclusionsResult] = await Promise.all([
+      supabase
+        .from("buttons")
+        .select(
+          "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, created_at, updated_at",
+        )
+        .in("board_id", boardIds)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("snippet_inclusions")
+        .select(
+          "id, host_id, snippet_id, origin_row, origin_col, created_at, updated_at",
+        )
+        .in("host_id", boardIds)
+        .order("created_at", { ascending: true }),
+    ]);
     if (buttonsResult.error) {
       return c.json({ error: pgErrorMessage(buttonsResult.error) }, 400);
     }
+    if (inclusionsResult.error) {
+      return c.json({ error: pgErrorMessage(inclusionsResult.error) }, 400);
+    }
     buttons = (buttonsResult.data ?? []) as Button[];
+    snippetInclusions = (inclusionsResult.data ?? []) as SnippetInclusion[];
   }
 
   const buttonsByBoard = new Map<string, Button[]>();
@@ -324,6 +348,7 @@ vocabularyRoutes.get("/:id/live", async (c) => {
       ...withDisplayName(vocabularyResult.data as Vocabulary),
       revision,
       paletteColors: (paletteResult.data ?? []) as PaletteColor[],
+      snippetInclusions,
       boards: boards.map((board) => ({
         ...withDisplayName(board),
         buttons: buttonsByBoard.get(board.id) ?? [],
@@ -420,6 +445,34 @@ vocabularyRoutes.get("/:id/palette-colors", async (c) => {
 
   return c.json({
     paletteColors: data as PaletteColor[],
+  });
+});
+
+vocabularyRoutes.get("/:id/snippet-inclusions", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+
+  const boards = await supabase.from("boards").select("id").eq("vocabulary_id", id);
+  if (boards.error) {
+    return c.json({ error: pgErrorMessage(boards.error) }, 400);
+  }
+  const boardIds = (boards.data ?? []).map((board) => board.id);
+  if (boardIds.length === 0) {
+    return c.json({ snippetInclusions: [] });
+  }
+
+  const { data, error } = await supabase
+    .from("snippet_inclusions")
+    .select("id, host_id, snippet_id, origin_row, origin_col, created_at, updated_at")
+    .in("host_id", boardIds)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return c.json({ error: pgErrorMessage(error) }, 400);
+  }
+
+  return c.json({
+    snippetInclusions: data as SnippetInclusion[],
   });
 });
 

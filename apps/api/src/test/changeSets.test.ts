@@ -179,6 +179,101 @@ describe("Change Sets HTTP API", () => {
     expect(rejected.status).toBeGreaterThanOrEqual(400);
   });
 
+  it("Manager can include a Snippet on a Board through a Change Set", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken, "CS Inclusion");
+
+    const homeId = randomUUID();
+    const foodId = randomUUID();
+    const snippetId = randomUUID();
+    const incHome = randomUUID();
+    const incFood = randomUUID();
+    const created = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [
+            { op: "create_board", id: homeId, name: "Home", width: 4, height: 2 },
+            { op: "create_board", id: foodId, name: "Food", width: 4, height: 2 },
+            {
+              op: "create_board",
+              id: snippetId,
+              name: "Strip",
+              width: 6,
+              height: 1,
+              kind: "snippet",
+            },
+            {
+              op: "create_snippet_inclusion",
+              id: incHome,
+              host_id: homeId,
+              snippet_id: snippetId,
+              origin_row: 0,
+              origin_col: 0,
+            },
+            {
+              op: "create_snippet_inclusion",
+              id: incFood,
+              host_id: foodId,
+              snippet_id: snippetId,
+              origin_row: 0,
+              origin_col: 1,
+            },
+          ],
+        },
+      },
+    );
+    expect(created.status).toBe(201);
+
+    const listed = await apiJson<{
+      snippetInclusions: { id: string; host_id: string; snippet_id: string }[];
+    }>(app, `/vocabularies/${vocabulary.id}/snippet-inclusions`, {
+      accessToken: manager.accessToken,
+    });
+    expect(listed.status).toBe(200);
+    expect(listed.body.snippetInclusions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: incHome, host_id: homeId, snippet_id: snippetId }),
+        expect.objectContaining({ id: incFood, host_id: foodId, snippet_id: snippetId }),
+      ]),
+    );
+
+    const deleted = await apiJson<{ changeSet: ChangeSet }>(
+      app,
+      `/vocabularies/${vocabulary.id}/change-sets`,
+      {
+        method: "POST",
+        accessToken: manager.accessToken,
+        body: {
+          status: "applied",
+          mutations: [{ op: "delete_snippet_inclusion", id: incHome }],
+        },
+      },
+    );
+    expect(deleted.status).toBe(201);
+
+    const after = await apiJson<{ snippetInclusions: { id: string }[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/snippet-inclusions`,
+      { accessToken: manager.accessToken },
+    );
+    expect(after.body.snippetInclusions.map((inc) => inc.id)).toEqual([incFood]);
+
+    const boards = await apiJson<{ boards: Board[] }>(
+      app,
+      `/vocabularies/${vocabulary.id}/boards`,
+      { accessToken: manager.accessToken },
+    );
+    expect(boards.body.boards.map((b) => b.id)).toEqual(
+      expect.arrayContaining([homeId, foodId, snippetId]),
+    );
+  });
+
   it("Suggested Change Set does not change live boards until applied", async () => {
     const app = testApp();
     const manager = await createTestUser();

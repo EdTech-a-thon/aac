@@ -27,6 +27,14 @@ export type PaletteColorSnapshot = {
 	position: number;
 };
 
+export type InclusionSnapshot = {
+	id: string;
+	host_id: string;
+	snippet_id: string;
+	origin_row: number;
+	origin_col: number;
+};
+
 export type ChangeSetMutation =
 	| {
 			op: 'create_board';
@@ -83,7 +91,22 @@ export type ChangeSetMutation =
 			description?: string;
 			position?: number;
 	  }
-	| { op: 'delete_palette_color'; id: string };
+	| { op: 'delete_palette_color'; id: string }
+	| {
+			op: 'create_snippet_inclusion';
+			id: string;
+			host_id: string;
+			snippet_id: string;
+			origin_row: number;
+			origin_col: number;
+	  }
+	| {
+			op: 'update_snippet_inclusion';
+			id: string;
+			origin_row?: number;
+			origin_col?: number;
+	  }
+	| { op: 'delete_snippet_inclusion'; id: string };
 
 function boardKey(board: BoardSnapshot) {
 	return `${board.name}\0${board.width}\0${board.height}\0${board.kind ?? 'board'}`;
@@ -238,6 +261,51 @@ export function diffPaletteMutations(
 		if (!currentMap.has(color.id)) {
 			mutations.push({ op: 'delete_palette_color', id: color.id });
 		}
+	}
+
+	return mutations;
+}
+
+function inclusionKey(inclusion: InclusionSnapshot) {
+	return `${inclusion.host_id}\0${inclusion.snippet_id}\0${inclusion.origin_row}\0${inclusion.origin_col}`;
+}
+
+/** Diff last-synced Snippet Inclusions against current local editor state. */
+export function diffSnippetInclusionMutations(
+	baseInclusions: InclusionSnapshot[],
+	currentInclusions: InclusionSnapshot[],
+	currentHostIds: Set<string>
+): ChangeSetMutation[] {
+	const mutations: ChangeSetMutation[] = [];
+	const baseMap = new Map(baseInclusions.map((inc) => [inc.id, inc]));
+	const currentMap = new Map(currentInclusions.map((inc) => [inc.id, inc]));
+
+	for (const inclusion of currentInclusions) {
+		const base = baseMap.get(inclusion.id);
+		if (!base) {
+			mutations.push({
+				op: 'create_snippet_inclusion',
+				id: inclusion.id,
+				host_id: inclusion.host_id,
+				snippet_id: inclusion.snippet_id,
+				origin_row: inclusion.origin_row,
+				origin_col: inclusion.origin_col
+			});
+		} else if (inclusionKey(base) !== inclusionKey(inclusion)) {
+			const update: Extract<ChangeSetMutation, { op: 'update_snippet_inclusion' }> = {
+				op: 'update_snippet_inclusion',
+				id: inclusion.id
+			};
+			if (base.origin_row !== inclusion.origin_row) update.origin_row = inclusion.origin_row;
+			if (base.origin_col !== inclusion.origin_col) update.origin_col = inclusion.origin_col;
+			mutations.push(update);
+		}
+	}
+
+	for (const inclusion of baseInclusions) {
+		if (currentMap.has(inclusion.id)) continue;
+		if (!currentHostIds.has(inclusion.host_id)) continue;
+		mutations.push({ op: 'delete_snippet_inclusion', id: inclusion.id });
 	}
 
 	return mutations;

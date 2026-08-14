@@ -12,6 +12,13 @@ export type MutationLookupContext = {
 		col_index: number;
 	}[];
 	paletteColors: { id: string; name: string; hex: string }[];
+	snippetInclusions?: {
+		id: string;
+		host_id: string;
+		snippet_id: string;
+		origin_row: number;
+		origin_col: number;
+	}[];
 };
 
 function gridNoun(kind?: 'board' | 'snippet') {
@@ -202,6 +209,28 @@ function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContex
 		}
 		case 'delete_palette_color':
 			return `Delete Palette Color ${paletteName(ctx, mutation.id)}`;
+		case 'create_snippet_inclusion':
+			return `Create Snippet Inclusion of ${boardName(ctx, mutation.snippet_id)} on ${boardName(ctx, mutation.host_id)} at ${cellRef(mutation.origin_row, mutation.origin_col)}`;
+		case 'update_snippet_inclusion': {
+			const existing = (ctx.snippetInclusions ?? []).find((inc) => inc.id === mutation.id);
+			const snippetId = existing?.snippet_id;
+			const hostId = existing?.host_id;
+			const parts: string[] = [];
+			if (mutation.origin_row !== undefined || mutation.origin_col !== undefined) {
+				const row = mutation.origin_row ?? existing?.origin_row;
+				const col = mutation.origin_col ?? existing?.origin_col;
+				if (row !== undefined && col !== undefined) {
+					parts.push(`move to ${cellRef(row, col)}`);
+				}
+			}
+			const detail = parts.length > 0 ? `: ${parts.join('; ')}` : '';
+			return `Update Snippet Inclusion of ${snippetId ? boardName(ctx, snippetId) : 'a Snippet'} on ${hostId ? boardName(ctx, hostId) : 'a Board'}${detail}`;
+		}
+		case 'delete_snippet_inclusion': {
+			const existing = (ctx.snippetInclusions ?? []).find((inc) => inc.id === mutation.id);
+			if (!existing) return 'Delete Snippet Inclusion';
+			return `Delete Snippet Inclusion of ${boardName(ctx, existing.snippet_id)} on ${boardName(ctx, existing.host_id)}`;
+		}
 	}
 }
 
@@ -236,6 +265,9 @@ function isChangeSetMutation(value: unknown): value is ChangeSetMutation {
 		op === 'delete_button' ||
 		op === 'create_palette_color' ||
 		op === 'update_palette_color' ||
-		op === 'delete_palette_color'
+		op === 'delete_palette_color' ||
+		op === 'create_snippet_inclusion' ||
+		op === 'update_snippet_inclusion' ||
+		op === 'delete_snippet_inclusion'
 	);
 }

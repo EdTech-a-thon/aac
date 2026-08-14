@@ -15,7 +15,7 @@
 		subscribeEditorRevision,
 		type SuggestedChangeSet
 	} from '$lib/vocabularyEditorSession';
-	import type { Board, BoardButton, PaletteColor } from '$lib/types';
+	import type { Board, BoardButton, PaletteColor, SnippetInclusion } from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
@@ -41,7 +41,8 @@
 		return groupSuggestedChanges(changeSet.mutations, {
 			boards: session.baseBoards,
 			buttons,
-			paletteColors: session.basePaletteColors
+			paletteColors: session.basePaletteColors,
+			snippetInclusions: session.baseSnippetInclusions
 		});
 	});
 
@@ -54,7 +55,8 @@
 						vocabularyId,
 						boards: session.baseBoards,
 						buttons: Object.values(session.baseButtonsByBoardId).flat(),
-						paletteColors: session.basePaletteColors
+						paletteColors: session.basePaletteColors,
+						snippetInclusions: session.baseSnippetInclusions
 					},
 					changeSet.mutations
 				).paletteColors;
@@ -67,11 +69,15 @@
 
 	async function hydrateForPreview(id: string, accessToken: string) {
 		const current = getVocabularyEditorSession(id);
-		const [boardData, paletteData, suggested] = await Promise.all([
+		const [boardData, paletteData, inclusionData, suggested] = await Promise.all([
 			apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, { accessToken }),
 			apiFetch<{ paletteColors: PaletteColor[] }>(`/vocabularies/${id}/palette-colors`, {
 				accessToken
 			}),
+			apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
+				`/vocabularies/${id}/snippet-inclusions`,
+				{ accessToken }
+			),
 			apiFetch<{ changeSets: SuggestedChangeSet[] }>(
 				`/vocabularies/${id}/change-sets?status=suggested`,
 				{ accessToken }
@@ -94,7 +100,8 @@
 				current,
 				boardData.boards,
 				nextButtonsByBoardId,
-				paletteData.paletteColors
+				paletteData.paletteColors,
+				inclusionData.snippetInclusions
 			);
 		} else if (!current.paletteHydrated) {
 			persistEditorSession(current, {
@@ -160,13 +167,18 @@
 
 	async function reloadLiveBoardsAndButtons() {
 		if (!dashboard.auth) return;
-		const [boardData, paletteData] = await Promise.all([
+		const accessToken = dashboard.auth.session.access_token;
+		const [boardData, paletteData, inclusionData] = await Promise.all([
 			apiFetch<{ boards: Board[] }>(`/vocabularies/${vocabularyId}/boards`, {
-				accessToken: dashboard.auth.session.access_token
+				accessToken
 			}),
 			apiFetch<{ paletteColors: PaletteColor[] }>(
 				`/vocabularies/${vocabularyId}/palette-colors`,
-				{ accessToken: dashboard.auth.session.access_token }
+				{ accessToken }
+			),
+			apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
+				`/vocabularies/${vocabularyId}/snippet-inclusions`,
+				{ accessToken }
 			)
 		]);
 		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
@@ -174,7 +186,7 @@
 			boardData.boards.map(async (board) => {
 				const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
 					`/vocabularies/${vocabularyId}/boards/${board.id}/buttons`,
-					{ accessToken: dashboard.auth.session.access_token }
+					{ accessToken }
 				);
 				nextButtonsByBoardId[board.id] = buttonData.buttons;
 			})
@@ -183,7 +195,8 @@
 			session,
 			boardData.boards,
 			nextButtonsByBoardId,
-			paletteData.paletteColors
+			paletteData.paletteColors,
+			inclusionData.snippetInclusions
 		);
 	}
 

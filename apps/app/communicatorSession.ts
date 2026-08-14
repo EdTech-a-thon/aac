@@ -55,6 +55,17 @@ export type LiveSnapshot = {
   revision: number;
   paletteColors: LivePaletteColor[];
   boards: LiveBoard[];
+  snippetInclusions: LiveSnippetInclusion[];
+};
+
+export type LiveSnippetInclusion = {
+  id: string;
+  host_id: string;
+  snippet_id: string;
+  origin_row: number;
+  origin_col: number;
+  created_at: string;
+  updated_at: string;
 };
 
 export type SpeechAdapter = {
@@ -111,6 +122,12 @@ function resolveHex(button: LiveButton, snapshot: LiveSnapshot): string {
   return "#ffffff";
 }
 
+function newerInclusion(a: LiveSnippetInclusion, b: LiveSnippetInclusion): LiveSnippetInclusion {
+  const byTime = a.created_at.localeCompare(b.created_at);
+  if (byTime !== 0) return byTime > 0 ? a : b;
+  return a.id >= b.id ? a : b;
+}
+
 function visibleCells(board: LiveBoard | null, snapshot: LiveSnapshot | null) {
   if (!board || !snapshot) return [];
   const grid: Array<Array<VisibleCell | null>> = Array.from(
@@ -132,6 +149,44 @@ function visibleCells(board: LiveBoard | null, snapshot: LiveSnapshot | null) {
       button: winner,
       backgroundHex: resolveHex(winner, snapshot),
     };
+  }
+
+  const hostInclusions = (snapshot.snippetInclusions ?? [])
+    .filter((inc) => inc.host_id === board.id)
+    .sort((a, b) => {
+      const newer = newerInclusion(a, b);
+      return newer === a ? -1 : 1;
+    });
+  const boardsById = new Map(snapshot.boards.map((b) => [b.id, b]));
+
+  for (let row = 0; row < board.height; row++) {
+    for (let col = 0; col < board.width; col++) {
+      if (grid[row][col]) continue;
+      for (const inclusion of hostInclusions) {
+        const snippet = boardsById.get(inclusion.snippet_id);
+        if (!snippet) continue;
+        const localRow = row - inclusion.origin_row;
+        const localCol = col - inclusion.origin_col;
+        if (
+          localRow < 0 ||
+          localCol < 0 ||
+          localRow >= snippet.height ||
+          localCol >= snippet.width
+        ) {
+          continue;
+        }
+        const mapped = snippet.buttons.filter(
+          (button) => button.row_index === localRow && button.col_index === localCol,
+        );
+        if (mapped.length === 0) continue;
+        const winner = mapped.reduce(newerButton);
+        grid[row][col] = {
+          button: winner,
+          backgroundHex: resolveHex(winner, snapshot),
+        };
+        break;
+      }
+    }
   }
   return grid;
 }

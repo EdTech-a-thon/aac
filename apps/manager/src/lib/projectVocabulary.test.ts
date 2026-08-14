@@ -8,6 +8,7 @@ function live(partial: Partial<ProjectedVocabulary> = {}): ProjectedVocabulary {
 		boards: [],
 		buttons: [],
 		paletteColors: [],
+		snippetInclusions: [],
 		...partial
 	};
 }
@@ -190,6 +191,125 @@ describe('projectVocabulary', () => {
 		);
 
 		expect(projected.buttons[0]?.action).toBeNull();
+	});
+
+	it('adds a Snippet Inclusion from create_snippet_inclusion', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'board-1' }),
+					board({
+						id: 'snip-1',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-1',
+					host_id: 'board-1',
+					snippet_id: 'snip-1',
+					origin_row: 0,
+					origin_col: 1
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({
+				id: 'inc-1',
+				host_id: 'board-1',
+				snippet_id: 'snip-1',
+				origin_row: 0,
+				origin_col: 1
+			})
+		]);
+	});
+
+	it('moves and deletes a Snippet Inclusion without deleting the Snippet', () => {
+		const withInclusion = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'board-1' }),
+					board({
+						id: 'snip-1',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					})
+				],
+				snippetInclusions: [
+					{
+						id: 'inc-1',
+						host_id: 'board-1',
+						snippet_id: 'snip-1',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-01T00:00:00.000Z',
+						updated_at: '2026-01-01T00:00:00.000Z'
+					}
+				]
+			}),
+			[{ op: 'update_snippet_inclusion', id: 'inc-1', origin_row: 1, origin_col: 2 }]
+		);
+		expect(withInclusion.snippetInclusions).toEqual([
+			expect.objectContaining({ id: 'inc-1', origin_row: 1, origin_col: 2 })
+		]);
+
+		const afterDelete = projectVocabulary(withInclusion, [
+			{ op: 'delete_snippet_inclusion', id: 'inc-1' }
+		]);
+		expect(afterDelete.snippetInclusions).toEqual([]);
+		expect(afterDelete.boards.map((b) => b.id).sort()).toEqual(['board-1', 'snip-1']);
+	});
+
+	it('includes the same Snippet on many Boards as separate live inclusions', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home' }),
+					board({ id: 'food', name: 'Food', displayName: 'Food' }),
+					board({
+						id: 'snip-1',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-home',
+					host_id: 'home',
+					snippet_id: 'snip-1',
+					origin_row: 0,
+					origin_col: 0
+				},
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-food',
+					host_id: 'food',
+					snippet_id: 'snip-1',
+					origin_row: 0,
+					origin_col: 0
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({ id: 'inc-home', host_id: 'home', snippet_id: 'snip-1' }),
+			expect.objectContaining({ id: 'inc-food', host_id: 'food', snippet_id: 'snip-1' })
+		]);
 	});
 
 	it('updates a Board from update_board', () => {

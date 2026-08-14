@@ -1,13 +1,14 @@
 import {
 	diffBoardButtonMutations,
 	diffPaletteMutations,
+	diffSnippetInclusionMutations,
 	type BoardSnapshot,
 	type ButtonSnapshot,
 	type ChangeSetMutation,
 	type PaletteColorSnapshot
 } from './changeSetMutations';
 import { projectVocabulary } from './projectVocabulary';
-import type { Board, BoardButton, PaletteColor } from './types';
+import type { Board, BoardButton, PaletteColor, SnippetInclusion } from './types';
 
 export type SuggestedChangeSet = {
 	id: string;
@@ -27,6 +28,8 @@ export type VocabularyEditorSession = {
 	baseButtonsByBoardId: Record<string, BoardButton[]>;
 	paletteColors: PaletteColor[];
 	basePaletteColors: PaletteColor[];
+	snippetInclusions: SnippetInclusion[];
+	baseSnippetInclusions: SnippetInclusion[];
 	paletteHydrated: boolean;
 	selectedBoardId: string | null;
 	suggestedChangeSets: SuggestedChangeSet[];
@@ -114,6 +117,8 @@ export function persistEditorSession(
 			| 'baseButtonsByBoardId'
 			| 'paletteColors'
 			| 'basePaletteColors'
+			| 'snippetInclusions'
+			| 'baseSnippetInclusions'
 			| 'paletteHydrated'
 			| 'selectedBoardId'
 			| 'suggestedChangeSets'
@@ -132,6 +137,12 @@ export function persistEditorSession(
 	if (patch.paletteColors) session.paletteColors = clonePaletteColors(patch.paletteColors);
 	if (patch.basePaletteColors) {
 		session.basePaletteColors = clonePaletteColors(patch.basePaletteColors);
+	}
+	if (patch.snippetInclusions) {
+		session.snippetInclusions = structuredClone(patch.snippetInclusions);
+	}
+	if (patch.baseSnippetInclusions) {
+		session.baseSnippetInclusions = structuredClone(patch.baseSnippetInclusions);
 	}
 	if (patch.paletteHydrated !== undefined) session.paletteHydrated = patch.paletteHydrated;
 	if (patch.selectedBoardId !== undefined) session.selectedBoardId = patch.selectedBoardId;
@@ -153,6 +164,8 @@ export function getVocabularyEditorSession(vocabularyId: string): VocabularyEdit
 			baseButtonsByBoardId: {},
 			paletteColors: [],
 			basePaletteColors: [],
+			snippetInclusions: [],
+			baseSnippetInclusions: [],
 			paletteHydrated: false,
 			selectedBoardId: null,
 			suggestedChangeSets: [],
@@ -167,12 +180,15 @@ export function replaceEditorLiveFromServer(
 	session: VocabularyEditorSession,
 	boards: Board[],
 	buttonsByBoardId: Record<string, BoardButton[]>,
-	paletteColors?: PaletteColor[]
+	paletteColors?: PaletteColor[],
+	snippetInclusions: SnippetInclusion[] = []
 ) {
 	session.boards = cloneBoards(boards);
 	session.buttonsByBoardId = cloneButtonsByBoardId(buttonsByBoardId);
 	session.baseBoards = cloneBoards(boards);
 	session.baseButtonsByBoardId = cloneButtonsByBoardId(buttonsByBoardId);
+	session.snippetInclusions = structuredClone(snippetInclusions);
+	session.baseSnippetInclusions = structuredClone(snippetInclusions);
 	if (paletteColors) {
 		session.paletteColors = clonePaletteColors(paletteColors);
 		session.basePaletteColors = clonePaletteColors(paletteColors);
@@ -214,13 +230,15 @@ function applyProjectedVocabularyToWorkingCopy(
 			vocabularyId: session.vocabularyId,
 			boards: session.boards,
 			buttons: allButtonsFromMap(session.buttonsByBoardId),
-			paletteColors: session.paletteColors
+			paletteColors: session.paletteColors,
+			snippetInclusions: session.snippetInclusions
 		},
 		mutations
 	);
 	session.boards = projected.boards;
 	session.buttonsByBoardId = groupButtonsByBoard(projected.boards, projected.buttons);
 	session.paletteColors = projected.paletteColors;
+	session.snippetInclusions = projected.snippetInclusions;
 	if (
 		!session.selectedBoardId ||
 		!session.boards.some((board) => board.id === session.selectedBoardId)
@@ -238,10 +256,17 @@ export function rebaseEditorOntoLiveFromServer(
 	session: VocabularyEditorSession,
 	boards: Board[],
 	buttonsByBoardId: Record<string, BoardButton[]>,
-	paletteColors?: PaletteColor[]
+	paletteColors?: PaletteColor[],
+	snippetInclusions: SnippetInclusion[] = []
 ) {
 	const pending = pendingEditorMutations(session);
-	replaceEditorLiveFromServer(session, boards, buttonsByBoardId, paletteColors);
+	replaceEditorLiveFromServer(
+		session,
+		boards,
+		buttonsByBoardId,
+		paletteColors,
+		snippetInclusions
+	);
 	if (pending.length > 0) {
 		applyProjectedVocabularyToWorkingCopy(session, pending);
 		bumpEditorRevision();
@@ -262,6 +287,7 @@ export function acceptEditorBase(session: VocabularyEditorSession) {
 	session.baseBoards = cloneBoards(session.boards);
 	session.baseButtonsByBoardId = cloneButtonsByBoardId(session.buttonsByBoardId);
 	session.basePaletteColors = clonePaletteColors(session.paletteColors);
+	session.baseSnippetInclusions = structuredClone(session.snippetInclusions);
 	bumpEditorRevision();
 }
 
@@ -269,6 +295,7 @@ export function discardEditorChanges(session: VocabularyEditorSession) {
 	session.boards = cloneBoards(session.baseBoards);
 	session.buttonsByBoardId = cloneButtonsByBoardId(session.baseButtonsByBoardId);
 	session.paletteColors = clonePaletteColors(session.basePaletteColors);
+	session.snippetInclusions = structuredClone(session.baseSnippetInclusions);
 	if (
 		!session.selectedBoardId ||
 		!session.boards.some((board) => board.id === session.selectedBoardId)
@@ -297,7 +324,27 @@ export function pendingPaletteMutations(session: VocabularyEditorSession): Chang
 }
 
 export function pendingEditorMutations(session: VocabularyEditorSession): ChangeSetMutation[] {
-	return [...pendingBoardButtonMutations(session), ...pendingPaletteMutations(session)];
+	return [
+		...pendingBoardButtonMutations(session),
+		...pendingPaletteMutations(session),
+		...diffSnippetInclusionMutations(
+			session.baseSnippetInclusions.map((inc) => ({
+				id: inc.id,
+				host_id: inc.host_id,
+				snippet_id: inc.snippet_id,
+				origin_row: inc.origin_row,
+				origin_col: inc.origin_col
+			})),
+			session.snippetInclusions.map((inc) => ({
+				id: inc.id,
+				host_id: inc.host_id,
+				snippet_id: inc.snippet_id,
+				origin_row: inc.origin_row,
+				origin_col: inc.origin_col
+			})),
+			new Set(session.boards.map((board) => board.id))
+		)
+	];
 }
 
 export function isEditorDirty(session: VocabularyEditorSession) {

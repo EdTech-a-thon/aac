@@ -1,11 +1,12 @@
 import type { ChangeSetMutation } from './changeSetMutations';
-import type { Board, BoardButton, PaletteColor } from './types';
+import type { Board, BoardButton, PaletteColor, SnippetInclusion } from './types';
 
 export type ProjectedVocabulary = {
 	vocabularyId: string;
 	boards: Board[];
 	buttons: BoardButton[];
 	paletteColors: PaletteColor[];
+	snippetInclusions: SnippetInclusion[];
 };
 
 function boardDisplayName(name: string) {
@@ -90,6 +91,9 @@ export function projectVocabulary(
 		if (mutation.op === 'delete_board') {
 			projected.boards = projected.boards.filter((board) => board.id !== mutation.id);
 			projected.buttons = projected.buttons.filter((btn) => btn.board_id !== mutation.id);
+			projected.snippetInclusions = projected.snippetInclusions.filter(
+				(inc) => inc.host_id !== mutation.id && inc.snippet_id !== mutation.id
+			);
 			for (const btn of projected.buttons) {
 				if (btn.action?.kind === 'open_board' && btn.action.board_id === mutation.id) {
 					btn.action = null;
@@ -184,6 +188,39 @@ export function projectVocabulary(
 				btn.background_color = deleted.hex;
 				btn.updated_at = now;
 			}
+			continue;
+		}
+
+		if (mutation.op === 'create_snippet_inclusion') {
+			if (projected.snippetInclusions.some((inc) => inc.id === mutation.id)) continue;
+			const host = projected.boards.find((b) => b.id === mutation.host_id);
+			const snippet = projected.boards.find((b) => b.id === mutation.snippet_id);
+			if (!host || !snippet || snippet.kind !== 'snippet') continue;
+			projected.snippetInclusions.push({
+				id: mutation.id,
+				host_id: mutation.host_id,
+				snippet_id: mutation.snippet_id,
+				origin_row: mutation.origin_row,
+				origin_col: mutation.origin_col,
+				created_at: now,
+				updated_at: now
+			});
+			continue;
+		}
+
+		if (mutation.op === 'update_snippet_inclusion') {
+			const existing = projected.snippetInclusions.find((inc) => inc.id === mutation.id);
+			if (!existing) continue;
+			if (mutation.origin_row !== undefined) existing.origin_row = mutation.origin_row;
+			if (mutation.origin_col !== undefined) existing.origin_col = mutation.origin_col;
+			existing.updated_at = now;
+			continue;
+		}
+
+		if (mutation.op === 'delete_snippet_inclusion') {
+			projected.snippetInclusions = projected.snippetInclusions.filter(
+				(inc) => inc.id !== mutation.id
+			);
 		}
 	}
 

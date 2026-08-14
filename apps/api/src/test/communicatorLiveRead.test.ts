@@ -415,6 +415,76 @@ describe("Communicator Usage list and live snapshot", () => {
     expect(live.body.snapshot.boards[0]?.buttons.map((b) => b.id)).toEqual([buttonId]);
   });
 
+  it("includes Snippet Inclusions in the live snapshot", async () => {
+    const app = testApp();
+    const manager = await createTestUser();
+    const communicator = await createTestUser();
+    const vocabulary = await createManagedVocabulary(app, manager.accessToken, "Live inc");
+    await addCommunicator(app, manager.accessToken, vocabulary.id, communicator.email);
+
+    const homeId = randomUUID();
+    const snippetId = randomUUID();
+    const inclusionId = randomUUID();
+    const submitted = await apiJson(app, `/vocabularies/${vocabulary.id}/change-sets`, {
+      method: "POST",
+      accessToken: manager.accessToken,
+      body: {
+        status: "applied",
+        mutations: [
+          { op: "create_board", id: homeId, name: "Home", width: 4, height: 2 },
+          {
+            op: "create_board",
+            id: snippetId,
+            name: "Strip",
+            width: 2,
+            height: 1,
+            kind: "snippet",
+          },
+          {
+            op: "create_snippet_inclusion",
+            id: inclusionId,
+            host_id: homeId,
+            snippet_id: snippetId,
+            origin_row: 0,
+            origin_col: 1,
+          },
+        ],
+      },
+    });
+    expect(submitted.status).toBe(201);
+
+    const live = await apiJson<{
+      snapshot: {
+        boards: { id: string; kind?: string }[];
+        snippetInclusions: {
+          id: string;
+          host_id: string;
+          snippet_id: string;
+          origin_row: number;
+          origin_col: number;
+        }[];
+      };
+    }>(app, `/vocabularies/${vocabulary.id}/live`, {
+      accessToken: communicator.accessToken,
+    });
+    expect(live.status).toBe(200);
+    expect(live.body.snapshot.boards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: homeId, kind: "board" }),
+        expect.objectContaining({ id: snippetId, kind: "snippet" }),
+      ]),
+    );
+    expect(live.body.snapshot.snippetInclusions).toEqual([
+      expect.objectContaining({
+        id: inclusionId,
+        host_id: homeId,
+        snippet_id: snippetId,
+        origin_row: 0,
+        origin_col: 1,
+      }),
+    ]);
+  });
+
   it("denies the live snapshot without Usage, including Management-only", async () => {
     const app = testApp();
     const manager = await createTestUser();

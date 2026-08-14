@@ -81,6 +81,45 @@ describe('describeChangeSetMutations', () => {
 		]);
 	});
 
+	it('describes Snippet Inclusion create, move, and delete', () => {
+		expect(
+			describeChangeSetMutations(
+				[
+					{
+						op: 'create_snippet_inclusion',
+						id: 'inc-new',
+						host_id: 'board-1',
+						snippet_id: 'snip-1',
+						origin_row: 0,
+						origin_col: 1
+					},
+					{ op: 'update_snippet_inclusion', id: 'inc-1', origin_row: 1, origin_col: 2 },
+					{ op: 'delete_snippet_inclusion', id: 'inc-1' }
+				],
+				{
+					...ctx,
+					boards: [
+						...ctx.boards,
+						{ id: 'snip-1', name: 'Strip', width: 6, height: 1, kind: 'snippet' }
+					],
+					snippetInclusions: [
+						{
+							id: 'inc-1',
+							host_id: 'board-1',
+							snippet_id: 'snip-1',
+							origin_row: 0,
+							origin_col: 0
+						}
+					]
+				}
+			)
+		).toEqual([
+			'Create Snippet Inclusion of “Strip” on “Home” at B1',
+			'Update Snippet Inclusion of “Strip” on “Home”: move to C2',
+			'Delete Snippet Inclusion of “Strip” on “Home”'
+		]);
+	});
+
 	it('describes button create, update, and delete with resolved names', () => {
 		expect(
 			describeChangeSetMutations(

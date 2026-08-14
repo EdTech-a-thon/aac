@@ -15,7 +15,7 @@
 		replaceEditorPaletteFromServer,
 		subscribeEditorRevision
 	} from '$lib/vocabularyEditorSession';
-	import type { Board, BoardButton, PaletteColor } from '$lib/types';
+	import type { Board, BoardButton, PaletteColor, SnippetInclusion } from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
@@ -43,11 +43,15 @@
 		const current = getVocabularyEditorSession(id);
 		if (current.hydrated && current.paletteHydrated) return;
 
-		const [boardData, paletteData] = await Promise.all([
+		const [boardData, paletteData, inclusionData] = await Promise.all([
 			apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, { accessToken }),
 			apiFetch<{ paletteColors: PaletteColor[] }>(`/vocabularies/${id}/palette-colors`, {
 				accessToken
-			})
+			}),
+			apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
+				`/vocabularies/${id}/snippet-inclusions`,
+				{ accessToken }
+			)
 		]);
 		const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
 		await Promise.all(
@@ -64,7 +68,8 @@
 				current,
 				boardData.boards,
 				nextButtonsByBoardId,
-				paletteData.paletteColors
+				paletteData.paletteColors,
+				inclusionData.snippetInclusions
 			);
 		} else if (!current.paletteHydrated) {
 			replaceEditorPaletteFromServer(current, paletteData.paletteColors);

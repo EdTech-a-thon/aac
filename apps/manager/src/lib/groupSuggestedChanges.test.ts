@@ -150,4 +150,34 @@ describe('groupSuggestedChanges', () => {
 			expect(group.summary).toBe('Snippet “Strip”');
 		}
 	});
+
+	it('groups Snippet Inclusion ops onto the host Board', () => {
+		const groups = groupSuggestedChanges(
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-new',
+					host_id: 'board-1',
+					snippet_id: 'snip-1',
+					origin_row: 0,
+					origin_col: 1
+				}
+			],
+			{
+				...ctx,
+				boards: [
+					...ctx.boards,
+					{ id: 'snip-1', name: 'Strip', width: 6, height: 1, kind: 'snippet' }
+				]
+			}
+		);
+
+		expect(groups).toHaveLength(1);
+		const group = groups[0];
+		expect(group?.kind).toBe('board');
+		if (group?.kind === 'board') {
+			expect(group.summary).toBe('Board “Home”');
+			expect(group.changeLines).toEqual(['Insert snippet “Strip” at B1']);
+		}
+	});
 });

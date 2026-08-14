@@ -209,6 +209,22 @@ export function describeScopedChange(
 			if (!existing) return 'Delete button';
 			return `Delete ${buttonPhrase(existing.label)} at ${cellRef(existing.row_index, existing.col_index)}`;
 		}
+		case 'create_snippet_inclusion':
+			return `Insert snippet “${displayName(ctx.boards.find((b) => b.id === mutation.snippet_id)?.name)}” at ${cellRef(mutation.origin_row, mutation.origin_col)}`;
+		case 'update_snippet_inclusion': {
+			const existing = (ctx.snippetInclusions ?? []).find((inc) => inc.id === mutation.id);
+			const row = mutation.origin_row ?? existing?.origin_row;
+			const col = mutation.origin_col ?? existing?.origin_col;
+			if (row !== undefined && col !== undefined) {
+				return `Move snippet inclusion to ${cellRef(row, col)}`;
+			}
+			return 'Move snippet inclusion';
+		}
+		case 'delete_snippet_inclusion': {
+			const existing = (ctx.snippetInclusions ?? []).find((inc) => inc.id === mutation.id);
+			if (!existing) return 'Remove snippet inclusion';
+			return `Remove snippet inclusion of “${displayName(ctx.boards.find((b) => b.id === existing.snippet_id)?.name)}”`;
+		}
 		default:
 			return describeChangeSetMutations([mutation], ctx)[0] ?? 'Change';
 	}
@@ -261,6 +277,15 @@ function liveFromLookup(ctx: RichLookupContext): ProjectedVocabulary {
 			name: c.name,
 			description: '',
 			position: index,
+			created_at: '',
+			updated_at: ''
+		})),
+		snippetInclusions: (ctx.snippetInclusions ?? []).map((inc) => ({
+			id: inc.id,
+			host_id: inc.host_id,
+			snippet_id: inc.snippet_id,
+			origin_row: inc.origin_row,
+			origin_col: inc.origin_col,
 			created_at: '',
 			updated_at: ''
 		}))
@@ -466,6 +491,17 @@ export function groupSuggestedChanges(
 			case 'delete_palette_color':
 				paletteMutations.push(mutation);
 				break;
+			case 'create_snippet_inclusion':
+				if (!deletedBoardIds.has(mutation.host_id)) pushBoard(mutation.host_id, mutation);
+				break;
+			case 'update_snippet_inclusion':
+			case 'delete_snippet_inclusion': {
+				const existing = (ctx.snippetInclusions ?? []).find((inc) => inc.id === mutation.id);
+				if (existing && !deletedBoardIds.has(existing.host_id)) {
+					pushBoard(existing.host_id, mutation);
+				}
+				break;
+			}
 		}
 	}
 

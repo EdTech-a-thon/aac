@@ -12,7 +12,13 @@
 		DEFAULT_BUTTON_COLOR,
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
-	import { isSnippet, type Board, type BoardButton, type GridKind } from '$lib/types';
+	import {
+		isSnippet,
+		type Board,
+		type BoardButton,
+		type GridKind,
+		type SnippetInclusion
+	} from '$lib/types';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
@@ -49,6 +55,10 @@
 		revision;
 		return session.buttonsByBoardId;
 	});
+	const snippetInclusions = $derived.by(() => {
+		revision;
+		return session.snippetInclusions;
+	});
 	const selectedBoardId = $derived.by(() => {
 		revision;
 		return session.selectedBoardId;
@@ -68,6 +78,7 @@
 	}
 
 	let selectedButtonId = $state<string | null>(null);
+	let selectedInclusionId = $state<string | null>(null);
 	let loadingBoards = $state(true);
 	let loadingButtons = $state(true);
 	let error = $state<string | null>(null);
@@ -78,6 +89,10 @@
 
 	function setButtonsByBoardId(next: Record<string, BoardButton[]>) {
 		persistEditorSession(session, { buttonsByBoardId: next });
+	}
+
+	function setSnippetInclusions(next: SnippetInclusion[]) {
+		persistEditorSession(session, { snippetInclusions: next });
 	}
 
 	function setSelectedBoardId(next: string | null) {
@@ -134,7 +149,27 @@
 		floatY: number;
 		active: boolean;
 	} | null>(null);
+	let inclusionDrag = $state<{
+		inclusionId: string;
+		pointerId: number;
+		startX: number;
+		startY: number;
+		originRow: number;
+		originCol: number;
+		currentOriginRow: number;
+		currentOriginCol: number;
+		grabLocalRow: number;
+		grabLocalCol: number;
+		grabOffsetX: number;
+		grabOffsetY: number;
+		floatX: number;
+		floatY: number;
+		active: boolean;
+	} | null>(null);
 	let didDrag = $state(false);
+	let cellMenu = $state<{ row: number; col: number; x: number; y: number } | null>(null);
+	let insertSnippetOpen = $state(false);
+	let insertSnippetCell = $state<{ row: number; col: number } | null>(null);
 
 	const BOARD_PAD = 12;
 
@@ -157,6 +192,27 @@
 
 	const selectedButton = $derived(
 		buttons.find((button) => button.id === selectedButtonId) ?? null
+	);
+
+	const hostInclusions = $derived.by(() => {
+		if (!selectedBoardId) return [] as SnippetInclusion[];
+		return snippetInclusions
+			.filter((inc) => inc.host_id === selectedBoardId)
+			.slice()
+			.sort((a, b) => {
+				if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+				return a.id < b.id ? -1 : 1;
+			});
+	});
+
+	const selectedInclusion = $derived(
+		hostInclusions.find((inc) => inc.id === selectedInclusionId) ?? null
+	);
+
+	const selectedInclusionSnippet = $derived(
+		selectedInclusion
+			? (boards.find((board) => board.id === selectedInclusion.snippet_id) ?? null)
+			: null
 	);
 
 	const viewportCells = $derived.by(() => {
@@ -220,6 +276,76 @@
 
 	function cellTop(row: number) {
 		return row * (CELL + GAP);
+	}
+
+	function snippetForInclusion(inc: SnippetInclusion) {
+		return boards.find((board) => board.id === inc.snippet_id) ?? null;
+	}
+
+	function inclusionContainsCell(inc: SnippetInclusion, row: number, col: number) {
+		const snippet = snippetForInclusion(inc);
+		if (!snippet) return false;
+		const localRow = row - inc.origin_row;
+		const localCol = col - inc.origin_col;
+		return (
+			localRow >= 0 &&
+			localCol >= 0 &&
+			localRow < snippet.height &&
+			localCol < snippet.width
+		);
+	}
+
+	function newestInclusionAt(row: number, col: number) {
+		let newest: SnippetInclusion | null = null;
+		for (const inc of hostInclusions) {
+			if (!inclusionContainsCell(inc, row, col)) continue;
+			if (
+				!newest ||
+				inc.created_at > newest.created_at ||
+				(inc.created_at === newest.created_at && inc.id > newest.id)
+			) {
+				newest = inc;
+			}
+		}
+		return newest;
+	}
+
+	function clippedInclusionRect(
+		inc: SnippetInclusion,
+		originRow = inc.origin_row,
+		originCol = inc.origin_col
+	) {
+		const snippet = snippetForInclusion(inc);
+		const host = selectedBoard;
+		if (!snippet || !host) return null;
+		const row0 = Math.max(0, originRow);
+		const col0 = Math.max(0, originCol);
+		const row1 = Math.min(host.height, originRow + snippet.height);
+		const col1 = Math.min(host.width, originCol + snippet.width);
+		if (row1 <= row0 || col1 <= col0) return null;
+		return { row: row0, col: col0, height: row1 - row0, width: col1 - col0 };
+	}
+
+	function cellSpanSize(count: number) {
+		return count * CELL + Math.max(0, count - 1) * GAP;
+	}
+
+	function clampInclusionOrigin(
+		inc: SnippetInclusion,
+		originRow: number,
+		originCol: number
+	) {
+		const snippet = snippetForInclusion(inc);
+		const host = selectedBoard;
+		if (!snippet || !host) return { row: originRow, col: originCol };
+		const minRow = 1 - snippet.height;
+		const maxRow = host.height - 1;
+		const minCol = 1 - snippet.width;
+		const maxCol = host.width - 1;
+		return {
+			row: Math.min(maxRow, Math.max(minRow, originRow)),
+			col: Math.min(maxCol, Math.max(minCol, originCol))
+		};
 	}
 
 	function clampZoom(value: number) {
@@ -297,12 +423,16 @@
 			loadingBoards = true;
 			loadingButtons = true;
 			try {
-				const [data, paletteData] = await Promise.all([
+				const [data, paletteData, inclusionData] = await Promise.all([
 					apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
 						accessToken: token
 					}),
 					apiFetch<{ paletteColors: import('$lib/types').PaletteColor[] }>(
 						`/vocabularies/${id}/palette-colors`,
+						{ accessToken: token }
+					),
+					apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
+						`/vocabularies/${id}/snippet-inclusions`,
 						{ accessToken: token }
 					)
 				]);
@@ -326,7 +456,8 @@
 					current,
 					data.boards.map(withGridKind),
 					nextButtonsByBoardId,
-					paletteData.paletteColors
+					paletteData.paletteColors,
+					inclusionData.snippetInclusions
 				);
 				await refreshSuggested();
 			} catch (err) {
@@ -348,12 +479,20 @@
 	$effect(() => {
 		selectedBoardId;
 		selectedButtonId = null;
+		selectedInclusionId = null;
+		cellMenu = null;
 	});
 
 	$effect(() => {
 		revision;
 		if (selectedButtonId && !buttons.some((button) => button.id === selectedButtonId)) {
 			selectedButtonId = null;
+		}
+		if (
+			selectedInclusionId &&
+			!hostInclusions.some((inc) => inc.id === selectedInclusionId)
+		) {
+			selectedInclusionId = null;
 		}
 	});
 
@@ -449,11 +588,15 @@
 
 			if (
 				(event.key === 'Backspace' || event.key === 'Delete') &&
-				!isEditableTarget(event.target) &&
-				selectedButtonId
+				!isEditableTarget(event.target)
 			) {
-				event.preventDefault();
-				deleteSelectedButton();
+				if (selectedInclusionId) {
+					event.preventDefault();
+					deleteSelectedInclusion();
+				} else if (selectedButtonId) {
+					event.preventDefault();
+					deleteSelectedButton();
+				}
 			}
 		}
 		function onKeyUp(event: KeyboardEvent) {
@@ -554,6 +697,9 @@
 		}
 		setBoards(nextBoards);
 		setButtonsByBoardId(cleared);
+		setSnippetInclusions(
+			snippetInclusions.filter((inc) => inc.host_id !== id && inc.snippet_id !== id)
+		);
 		const sameKind = nextBoards.filter((board) => board.kind === selectedBoard.kind);
 		setSelectedBoardId(sameKind[0]?.id ?? nextBoards[0]?.id ?? null);
 		fittedBoardId = null;
@@ -564,11 +710,23 @@
 		event?.stopPropagation();
 		if (didDrag) return;
 		selectedButtonId = button.id;
+		selectedInclusionId = null;
+		cellMenu = null;
+	}
+
+	function selectInclusion(inc: SnippetInclusion, event?: MouseEvent) {
+		event?.stopPropagation();
+		if (didDrag) return;
+		selectedInclusionId = inc.id;
+		selectedButtonId = null;
+		cellMenu = null;
 	}
 
 	function clearSelection() {
 		if (didPan || didDrag) return;
 		selectedButtonId = null;
+		selectedInclusionId = null;
+		cellMenu = null;
 	}
 
 	function pointerToBoardLocal(clientX: number, clientY: number) {
@@ -601,6 +759,8 @@
 		if (event.button !== 0 || spaceDown) return;
 		event.stopPropagation();
 		selectedButtonId = button.id;
+		selectedInclusionId = null;
+		cellMenu = null;
 		didDrag = false;
 		const originLeft = cellLeft(button.col_index);
 		const originTop = cellTop(button.row_index);
@@ -694,6 +854,93 @@
 		});
 	}
 
+	function onInclusionPointerDown(inc: SnippetInclusion, event: PointerEvent) {
+		if (event.button !== 0 || spaceDown) return;
+		event.stopPropagation();
+		selectedInclusionId = inc.id;
+		selectedButtonId = null;
+		cellMenu = null;
+		didDrag = false;
+		const cell = pointerToCell(event.clientX, event.clientY);
+		const grabLocalRow = cell ? cell.row - inc.origin_row : 0;
+		const grabLocalCol = cell ? cell.col - inc.origin_col : 0;
+		const originLeft = cellLeft(inc.origin_col);
+		const originTop = cellTop(inc.origin_row);
+		const local = pointerToBoardLocal(event.clientX, event.clientY);
+		inclusionDrag = {
+			inclusionId: inc.id,
+			pointerId: event.pointerId,
+			startX: event.clientX,
+			startY: event.clientY,
+			originRow: inc.origin_row,
+			originCol: inc.origin_col,
+			currentOriginRow: inc.origin_row,
+			currentOriginCol: inc.origin_col,
+			grabLocalRow,
+			grabLocalCol,
+			grabOffsetX: local ? local.x - originLeft : CELL / 2,
+			grabOffsetY: local ? local.y - originTop : CELL / 2,
+			floatX: originLeft,
+			floatY: originTop,
+			active: false
+		};
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+	}
+
+	function onInclusionPointerMove(event: PointerEvent) {
+		const current = inclusionDrag;
+		if (!current || current.pointerId !== event.pointerId) return;
+		const dist = Math.hypot(event.clientX - current.startX, event.clientY - current.startY);
+		let next = current;
+		if (!next.active && dist > 6) {
+			next = { ...next, active: true };
+			inclusionDrag = next;
+			didDrag = true;
+		}
+		if (!next.active) return;
+
+		const cell = pointerToCell(event.clientX, event.clientY);
+		const unclampedRow = cell ? cell.row - next.grabLocalRow : next.currentOriginRow;
+		const unclampedCol = cell ? cell.col - next.grabLocalCol : next.currentOriginCol;
+		const inc = snippetInclusions.find((item) => item.id === next.inclusionId);
+		const clamped = inc
+			? clampInclusionOrigin(inc, unclampedRow, unclampedCol)
+			: { row: unclampedRow, col: unclampedCol };
+		if (
+			clamped.row !== next.currentOriginRow ||
+			clamped.col !== next.currentOriginCol
+		) {
+			inclusionDrag = {
+				...next,
+				currentOriginRow: clamped.row,
+				currentOriginCol: clamped.col
+			};
+		}
+	}
+
+	function onInclusionPointerUp(event: PointerEvent) {
+		if (!inclusionDrag || inclusionDrag.pointerId !== event.pointerId) return;
+		const snapshot = inclusionDrag;
+		inclusionDrag = null;
+		try {
+			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+		} catch {
+			// already released
+		}
+
+		if (!snapshot.active) {
+			queueMicrotask(() => {
+				didDrag = false;
+			});
+			return;
+		}
+
+		moveInclusion(snapshot.inclusionId, snapshot.currentOriginRow, snapshot.currentOriginCol);
+		queueMicrotask(() => {
+			didDrag = false;
+		});
+	}
+
 	function moveButton(buttonId: string, row: number, col: number) {
 		const button = buttons.find((b) => b.id === buttonId);
 		if (!button || !selectedBoardId) return;
@@ -727,6 +974,8 @@
 		};
 		setCurrentBoardButtons([...buttons, button]);
 		selectedButtonId = id;
+		selectedInclusionId = null;
+		cellMenu = null;
 	}
 
 	function deleteSelectedButton() {
@@ -736,6 +985,69 @@
 		setCurrentBoardButtons(buttons.filter((b) => b.id !== button.id));
 		selectedButtonId = null;
 		propsError = null;
+	}
+
+	function insertSnippetAt(snippetId: string, row: number, col: number) {
+		if (!selectedBoardId || !selectedBoard || isSnippet(selectedBoard)) return;
+		const snippet = boards.find((board) => board.id === snippetId && isSnippet(board));
+		if (!snippet) return;
+		const now = new Date().toISOString();
+		const inclusion: SnippetInclusion = {
+			id: crypto.randomUUID(),
+			host_id: selectedBoardId,
+			snippet_id: snippetId,
+			origin_row: row,
+			origin_col: col,
+			created_at: now,
+			updated_at: now
+		};
+		setSnippetInclusions([...snippetInclusions, inclusion]);
+		selectedInclusionId = inclusion.id;
+		selectedButtonId = null;
+		insertSnippetOpen = false;
+		insertSnippetCell = null;
+		cellMenu = null;
+	}
+
+	function moveInclusion(inclusionId: string, originRow: number, originCol: number) {
+		const existing = snippetInclusions.find((inc) => inc.id === inclusionId);
+		if (!existing) return;
+		if (existing.origin_row === originRow && existing.origin_col === originCol) return;
+		setSnippetInclusions(
+			snippetInclusions.map((inc) =>
+				inc.id === inclusionId
+					? { ...inc, origin_row: originRow, origin_col: originCol, updated_at: new Date().toISOString() }
+					: inc
+			)
+		);
+	}
+
+	function deleteSelectedInclusion() {
+		const inclusion = selectedInclusion;
+		if (!inclusion) return;
+		setSnippetInclusions(snippetInclusions.filter((inc) => inc.id !== inclusion.id));
+		selectedInclusionId = null;
+	}
+
+	function openSnippetCanvas(snippetId: string) {
+		setSelectedBoardId(snippetId);
+		fittedBoardId = null;
+		selectedInclusionId = null;
+		selectedButtonId = null;
+	}
+
+	function openInsertSnippet(row: number, col: number) {
+		insertSnippetCell = { row, col };
+		insertSnippetOpen = true;
+		cellMenu = null;
+	}
+
+	function onEmptyCellContextMenu(row: number, col: number, event: MouseEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (buttonAtCell.get(`${row}:${col}`)) return;
+		if (newestInclusionAt(row, col)) return;
+		cellMenu = { row, col, x: event.clientX, y: event.clientY };
 	}
 
 	function updateSelectedLabel(label: string = labelDraft) {
@@ -1197,29 +1509,97 @@
 								{@const occupying = buttonAtCell.get(`${cell.row}:${cell.col}`)}
 								{@const isDragOrigin =
 									drag?.active && occupying && drag.buttonId === occupying.id}
+								{@const coveringInclusion = newestInclusionAt(cell.row, cell.col)}
 								<button
 									type="button"
-									class="group absolute flex items-center justify-center rounded-lg bg-slate-200/90 hover:bg-slate-300 active:bg-slate-400"
+									class="group absolute flex items-center justify-center rounded-lg bg-slate-200/90 {coveringInclusion
+										? ''
+										: 'hover:bg-slate-300 active:bg-slate-400'}"
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
 									aria-label={`Empty cell ${cellRef(cell.row, cell.col)}`}
-									disabled={Boolean(occupying && !isDragOrigin) || Boolean(drag?.active)}
+									disabled={Boolean(occupying && !isDragOrigin) ||
+										Boolean(drag?.active) ||
+										Boolean(inclusionDrag?.active)}
 									onclick={(event) => {
 										event.stopPropagation();
 										if (occupying && !isDragOrigin) return;
-										if (selectedButtonId) {
+										if (selectedButtonId || selectedInclusionId) {
 											clearSelection();
+											return;
+										}
+										if (coveringInclusion) {
+											selectInclusion(coveringInclusion, event);
 											return;
 										}
 										createButtonAt(cell.row, cell.col, event);
 									}}
+									oncontextmenu={(event) =>
+										onEmptyCellContextMenu(cell.row, cell.col, event)}
 								>
-									<span
-										class="pointer-events-none select-none text-3xl font-light leading-none text-slate-500 opacity-0 group-hover:opacity-50"
-										aria-hidden="true"
-									>
-										+
-									</span>
+									{#if !coveringInclusion}
+										<span
+											class="pointer-events-none select-none text-3xl font-light leading-none text-slate-500 opacity-0 group-hover:opacity-50"
+											aria-hidden="true"
+										>
+											+
+										</span>
+									{/if}
 								</button>
+							{/each}
+
+							{#each hostInclusions as inc (inc.id)}
+								{@const originRow =
+									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id
+										? inclusionDrag.currentOriginRow
+										: inc.origin_row}
+								{@const originCol =
+									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id
+										? inclusionDrag.currentOriginCol
+										: inc.origin_col}
+								{@const clip = clippedInclusionRect(inc, originRow, originCol)}
+								{@const snippet = snippetForInclusion(inc)}
+								{@const innerButtons = buttonsByBoardId[inc.snippet_id] ?? []}
+								{#if clip && snippet}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div
+										class="absolute z-[1] overflow-hidden rounded-lg {selectedInclusionId ===
+										inc.id
+											? 'cursor-grab ring-2 ring-violet-500 ring-offset-1'
+											: 'cursor-grab ring-1 ring-violet-300/70'} {inclusionDrag?.active &&
+										inclusionDrag.inclusionId === inc.id
+											? 'cursor-grabbing'
+											: ''}"
+										style={`left: ${cellLeft(clip.col)}px; top: ${cellTop(clip.row)}px; width: ${cellSpanSize(clip.width)}px; height: ${cellSpanSize(clip.height)}px;`}
+										role="button"
+										tabindex="0"
+										aria-label={`Snippet inclusion ${snippet.displayName} at ${cellRef(inc.origin_row, inc.origin_col)}`}
+										onpointerdown={(event) => onInclusionPointerDown(inc, event)}
+										onpointermove={onInclusionPointerMove}
+										onpointerup={onInclusionPointerUp}
+										onpointercancel={onInclusionPointerUp}
+										onclick={(event) => selectInclusion(inc, event)}
+										ondblclick={(event) => {
+											event.stopPropagation();
+											openSnippetCanvas(inc.snippet_id);
+										}}
+									>
+										{#each innerButtons as button (button.id)}
+											{@const hostRow = originRow + button.row_index}
+											{@const hostCol = originCol + button.col_index}
+											{#if hostRow >= clip.row &&
+												hostCol >= clip.col &&
+												hostRow < clip.row + clip.height &&
+												hostCol < clip.col + clip.width}
+												<div
+													class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-lg border border-slate-300/80 px-2 text-center text-sm font-medium opacity-40"
+													style={`left: ${cellLeft(hostCol) - cellLeft(clip.col)}px; top: ${cellTop(hostRow) - cellTop(clip.row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(button)}; color: ${contrastingTextColor(resolveButtonHex(button))};`}
+												>
+													<span class="line-clamp-3 break-words">{button.label}</span>
+												</div>
+											{/if}
+										{/each}
+									</div>
+								{/if}
 							{/each}
 
 							{#if drag?.active}
@@ -1258,7 +1638,7 @@
 									: cellTop(button.row_index)}
 								<button
 									type="button"
-									class="absolute flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
+									class="absolute z-[5] flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
 										? 'z-30 cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
 										: selectedButtonId === button.id
 											? 'z-10 cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
@@ -1306,7 +1686,13 @@
 			<aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
 				<div class="border-b border-slate-100 px-4 py-3">
 					<h2 class="text-sm font-semibold text-slate-900">
-						{selectedButton ? 'Button' : selectedGridNoun === 'snippet' ? 'Snippet' : 'Board'}
+						{selectedButton
+							? 'Button'
+							: selectedInclusion
+								? 'Snippet inclusion'
+								: selectedGridNoun === 'snippet'
+									? 'Snippet'
+									: 'Board'}
 					</h2>
 				</div>
 
@@ -1409,6 +1795,32 @@
 							</button>
 						</div>
 					</div>
+				{:else if selectedInclusion}
+					<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+						<p class="text-sm text-slate-700">
+							{selectedInclusionSnippet?.displayName ?? 'Untitled snippet'} at
+							{cellRef(selectedInclusion.origin_row, selectedInclusion.origin_col)}
+						</p>
+						<p class="text-sm text-slate-500">
+							Inner buttons are edited on the snippet canvas.
+						</p>
+						<button
+							type="button"
+							class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+							onclick={() => openSnippetCanvas(selectedInclusion.snippet_id)}
+						>
+							Edit snippet
+						</button>
+						<div class="mt-auto border-t border-slate-100 pt-4">
+							<button
+								type="button"
+								class="w-full rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50"
+								onclick={deleteSelectedInclusion}
+							>
+								Remove inclusion
+							</button>
+						</div>
+					</div>
 				{:else if selectedBoard}
 					<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
 						<div class="grid grid-cols-2 gap-3">
@@ -1471,6 +1883,53 @@
 
 </div>
 
+{#if cellMenu}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-40"
+		onclick={() => {
+			cellMenu = null;
+		}}
+		oncontextmenu={(event) => {
+			event.preventDefault();
+			cellMenu = null;
+		}}
+	></div>
+	<div
+		class="fixed z-50 min-w-40 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+		style={`left: ${cellMenu.x}px; top: ${cellMenu.y}px;`}
+		role="menu"
+	>
+		<button
+			type="button"
+			class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+			role="menuitem"
+			onclick={() => {
+				if (!cellMenu) return;
+				const { row, col } = cellMenu;
+				cellMenu = null;
+				createButtonAt(row, col);
+			}}
+		>
+			Add button
+		</button>
+		{#if selectedBoard && !isSnippet(selectedBoard)}
+			<button
+				type="button"
+				class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+				role="menuitem"
+				onclick={() => {
+					if (!cellMenu) return;
+					openInsertSnippet(cellMenu.row, cellMenu.col);
+				}}
+			>
+				Insert snippet
+			</button>
+		{/if}
+	</div>
+{/if}
+
 <Modal bind:open={createOpen} title={createKind === 'snippet' ? 'New snippet' : 'New board'}>
 	<form class="space-y-4" id="create-board-form" onsubmit={createBoard}>
 		<label class="block space-y-1.5">
@@ -1522,6 +1981,45 @@
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
 		>
 			Create
+		</button>
+	{/snippet}
+</Modal>
+
+<Modal
+	bind:open={insertSnippetOpen}
+	title="Insert snippet"
+	onClose={() => {
+		insertSnippetCell = null;
+	}}
+>
+	{#if snippets.length === 0}
+		<p class="text-sm text-slate-600">Create a snippet first, then insert it on this board.</p>
+	{:else}
+		<div class="flex max-h-72 flex-col gap-1 overflow-y-auto">
+			{#each snippets as snippet (snippet.id)}
+				<button
+					type="button"
+					class="rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+					onclick={() => {
+						if (!insertSnippetCell) return;
+						insertSnippetAt(snippet.id, insertSnippetCell.row, insertSnippetCell.col);
+					}}
+				>
+					{snippet.displayName}
+				</button>
+			{/each}
+		</div>
+	{/if}
+	{#snippet footer()}
+		<button
+			type="button"
+			class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+			onclick={() => {
+				insertSnippetOpen = false;
+				insertSnippetCell = null;
+			}}
+		>
+			Cancel
 		</button>
 	{/snippet}
 </Modal>

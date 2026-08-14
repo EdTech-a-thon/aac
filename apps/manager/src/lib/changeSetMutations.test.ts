@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffBoardButtonMutations } from './changeSetMutations';
+import { diffBoardButtonMutations, diffSnippetInclusionMutations } from './changeSetMutations';
 
 describe('diffBoardButtonMutations Action', () => {
 	it('includes Action on create_button and update_button when it changes', () => {
@@ -86,5 +86,53 @@ describe('diffBoardButtonMutations Action', () => {
 				kind: 'snippet'
 			}
 		]);
+	});
+});
+
+describe('diffSnippetInclusionMutations', () => {
+	const inclusion = {
+		id: 'inc-1',
+		host_id: 'board-1',
+		snippet_id: 'snip-1',
+		origin_row: 0,
+		origin_col: 0
+	};
+
+	it('emits create, origin update, and delete for Snippet Inclusions', () => {
+		expect(
+			diffSnippetInclusionMutations([], [inclusion], new Set(['board-1']))
+		).toEqual([
+			{
+				op: 'create_snippet_inclusion',
+				id: 'inc-1',
+				host_id: 'board-1',
+				snippet_id: 'snip-1',
+				origin_row: 0,
+				origin_col: 0
+			}
+		]);
+
+		expect(
+			diffSnippetInclusionMutations(
+				[inclusion],
+				[{ ...inclusion, origin_row: 1, origin_col: 2 }],
+				new Set(['board-1'])
+			)
+		).toEqual([
+			{
+				op: 'update_snippet_inclusion',
+				id: 'inc-1',
+				origin_row: 1,
+				origin_col: 2
+			}
+		]);
+
+		expect(
+			diffSnippetInclusionMutations([inclusion], [], new Set(['board-1']))
+		).toEqual([{ op: 'delete_snippet_inclusion', id: 'inc-1' }]);
+	});
+
+	it('skips deleting an inclusion whose host Board is also being deleted', () => {
+		expect(diffSnippetInclusionMutations([inclusion], [], new Set())).toEqual([]);
 	});
 });

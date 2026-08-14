@@ -41,6 +41,7 @@ function snapshot(overrides: Partial<LiveSnapshot> = {}): LiveSnapshot {
       },
     ],
     boards: [],
+    snippetInclusions: [],
     ...overrides,
   };
 }
@@ -153,6 +154,263 @@ describe("Communicator session", () => {
     session.open(snapshot({ boards: [] }));
     expect(session.getState().phase).toBe("empty-vocabulary");
     expect(session.getState().currentBoard).toBeNull();
+  });
+
+  it("draws Snippet Inclusion Buttons on the host Board", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 2 }),
+          {
+            ...board({
+              id: "snip",
+              name: "Strip",
+              width: 2,
+              height: 1,
+              buttons: [
+                button({
+                  id: "go",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Go",
+                  action: { kind: "insert_phrase", phrase: "go" },
+                }),
+                button({
+                  id: "home-btn",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 1,
+                  label: "Home",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const cells = session.getState().visibleCells;
+    expect(cells[0]?.[1]?.button.id).toBe("go");
+    expect(cells[0]?.[2]?.button.id).toBe("home-btn");
+    expect(cells[0]?.[0]).toBeNull();
+  });
+
+  it("lets a host Button cover inclusion content, even if the host Button is older", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "home",
+            width: 3,
+            height: 1,
+            buttons: [
+              button({
+                id: "cover",
+                board_id: "home",
+                row_index: 0,
+                col_index: 0,
+                label: "Cover",
+                created_at: "2026-01-01T00:00:00Z",
+              }),
+            ],
+          }),
+          {
+            ...board({
+              id: "snip",
+              width: 2,
+              height: 1,
+              buttons: [
+                button({
+                  id: "under",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Under",
+                  created_at: "2026-01-02T00:00:00Z",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-03T00:00:00Z",
+            updated_at: "2026-01-03T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[0]?.button.id).toBe("cover");
+  });
+
+  it("hides inclusion cells that sit outside the host viewport", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 2, height: 1 }),
+          {
+            ...board({
+              id: "snip",
+              width: 3,
+              height: 1,
+              buttons: [
+                button({
+                  id: "in",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "In",
+                }),
+                button({
+                  id: "out",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 2,
+                  label: "Out",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const cells = session.getState().visibleCells;
+    expect(cells[0]?.[1]?.button.id).toBe("in");
+    expect(cells[0]?.length).toBe(2);
+    session.tap(0, 2);
+    expect(session.getState().messageBar).toEqual([]);
+  });
+
+  it("tapping a flattened Snippet Button performs that Button's Action", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 3, height: 1 }),
+          {
+            ...board({
+              id: "snip",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "go",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  action: { kind: "insert_phrase", phrase: "go" },
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    session.tap(0, 0);
+    expect(session.getState().messageBar).toEqual(["go"]);
+  });
+
+  it("tapping a flattened Open Board Snippet Button jumps and keeps the Message Bar", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "home",
+            created_at: "2026-01-01T00:00:00Z",
+            width: 2,
+            height: 1,
+            buttons: [
+              button({
+                id: "ins",
+                board_id: "home",
+                row_index: 0,
+                col_index: 0,
+                action: { kind: "insert_phrase", phrase: "I" },
+              }),
+            ],
+          }),
+          board({ id: "food", created_at: "2026-01-02T00:00:00Z", name: "Food" }),
+          {
+            ...board({
+              id: "snip",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "go",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  action: { kind: "open_board", board_id: "food" },
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    session.tap(0, 0);
+    session.tap(0, 1);
+    expect(session.getState().currentBoard?.id).toBe("food");
+    expect(session.getState().messageBar).toEqual(["I"]);
   });
 
   it("appends Insert Phrase and joins the Message Bar with a single space", () => {

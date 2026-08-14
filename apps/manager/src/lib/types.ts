@@ -41,6 +41,16 @@ export type BoardButton = {
 	updated_at: string;
 };
 
+export type SnippetInclusion = {
+	id: string;
+	host_id: string;
+	snippet_id: string;
+	origin_row: number;
+	origin_col: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export type PaletteColor = {
 	id: string;
 	vocabulary_id: string;

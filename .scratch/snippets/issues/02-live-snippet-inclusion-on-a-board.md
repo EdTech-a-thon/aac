@@ -4,16 +4,16 @@
 
 **Blocked by:** 01 — Snippets as destination-less grids
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Right-click an empty cell (no host Button, not inside an inclusion rectangle): Add button or Insert snippet; left-click still creates a Button
-- [ ] Insert snippet picks a Snippet in this Vocabulary; origin is the right-clicked cell; rectangle is the Snippet’s width × height
-- [ ] The same Snippet can be included on many Boards; editing it is live on all of them
-- [ ] Manager shows the inclusion as a layer with inner Buttons de-emphasized; click selects the inclusion; a host Button on top is selected instead
-- [ ] Delete on a selected inclusion removes that placement only; the Snippet remains
-- [ ] Covering: create a Button on a real empty cell and drag it onto the inclusion; that host Button is drawn and hit in the AAC app even if older than the inclusion
-- [ ] Open the Snippet canvas from the Snippets list, by double-clicking the inclusion, or via Edit snippet while it is selected; inner Buttons are not editable on the host canvas
-- [ ] Inclusions that hang off the viewport remain; only the intersection is shown and hittable
-- [ ] `/live` includes Snippet Inclusions; the device flattens; tapping a flattened Snippet Button performs its Action
-- [ ] Change Sets persist inclusions; descriptions/grouping understand inclusion ops
-- [ ] Tests at Projected Vocabulary, Communicator session, and Change Set apply + `/live`
+- [x] Right-click an empty cell (no host Button, not inside an inclusion rectangle): Add button or Insert snippet; left-click still creates a Button
+- [x] Insert snippet picks a Snippet in this Vocabulary; origin is the right-clicked cell; rectangle is the Snippet’s width × height
+- [x] The same Snippet can be included on many Boards; editing it is live on all of them
+- [x] Manager shows the inclusion as a layer with inner Buttons de-emphasized; click selects the inclusion; a host Button on top is selected instead
+- [x] Delete on a selected inclusion removes that placement only; the Snippet remains
+- [x] Covering: create a Button on a real empty cell and drag it onto the inclusion; that host Button is drawn and hit in the AAC app even if older than the inclusion
+- [x] Open the Snippet canvas from the Snippets list, by double-clicking the inclusion, or via Edit snippet while it is selected; inner Buttons are not editable on the host canvas
+- [x] Inclusions that hang off the viewport remain; only the intersection is shown and hittable
+- [x] `/live` includes Snippet Inclusions; the device flattens; tapping a flattened Snippet Button performs its Action
+- [x] Change Sets persist inclusions; descriptions/grouping understand inclusion ops
+- [x] Tests at Projected Vocabulary, Communicator session, and Change Set apply + `/live`
