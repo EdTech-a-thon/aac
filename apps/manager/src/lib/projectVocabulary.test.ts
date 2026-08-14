@@ -473,6 +473,253 @@ describe('projectVocabulary', () => {
 		]);
 	});
 
+	it('includes a Snippet on another Snippet', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({
+						id: 'outer',
+						name: 'Actions',
+						displayName: 'Actions',
+						kind: 'snippet',
+						width: 4,
+						height: 1
+					}),
+					board({
+						id: 'inner',
+						name: 'Go',
+						displayName: 'Go',
+						kind: 'snippet',
+						width: 1,
+						height: 1
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-nested',
+					host_id: 'outer',
+					snippet_id: 'inner',
+					origin_row: 0,
+					origin_col: 2
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({
+				id: 'inc-nested',
+				host_id: 'outer',
+				snippet_id: 'inner',
+				origin_row: 0,
+				origin_col: 2
+			})
+		]);
+	});
+
+	it('refuses a Snippet Inclusion that would include a Snippet in itself', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({
+						id: 'strip',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 2,
+						height: 1
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-self',
+					host_id: 'strip',
+					snippet_id: 'strip',
+					origin_row: 0,
+					origin_col: 0
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([]);
+	});
+
+	it('refuses a Snippet Inclusion that would close a cycle through a chain', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({
+						id: 'a',
+						name: 'A',
+						displayName: 'A',
+						kind: 'snippet',
+						width: 2,
+						height: 1
+					}),
+					board({
+						id: 'b',
+						name: 'B',
+						displayName: 'B',
+						kind: 'snippet',
+						width: 2,
+						height: 1
+					}),
+					board({
+						id: 'c',
+						name: 'C',
+						displayName: 'C',
+						kind: 'snippet',
+						width: 2,
+						height: 1
+					})
+				],
+				snippetInclusions: [
+					{
+						id: 'inc-ab',
+						host_id: 'a',
+						snippet_id: 'b',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-01T00:00:00.000Z',
+						updated_at: '2026-01-01T00:00:00.000Z'
+					},
+					{
+						id: 'inc-bc',
+						host_id: 'b',
+						snippet_id: 'c',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-02T00:00:00.000Z',
+						updated_at: '2026-01-02T00:00:00.000Z'
+					}
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-ca',
+					host_id: 'c',
+					snippet_id: 'a',
+					origin_row: 0,
+					origin_col: 0
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions.map((inc) => inc.id)).toEqual(['inc-ab', 'inc-bc']);
+	});
+
+	it('deleting a Snippet removes its Buttons, the inclusions it holds, and every inclusion of it', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home', width: 6, height: 2 }),
+					board({
+						id: 'outer',
+						name: 'Outer',
+						displayName: 'Outer',
+						kind: 'snippet',
+						width: 4,
+						height: 1
+					}),
+					board({
+						id: 'inner',
+						name: 'Inner',
+						displayName: 'Inner',
+						kind: 'snippet',
+						width: 1,
+						height: 1
+					})
+				],
+				buttons: [
+					button({ id: 'cover', board_id: 'home', label: 'Cover' }),
+					button({ id: 'outer-btn', board_id: 'outer', label: 'Out' }),
+					button({ id: 'inner-btn', board_id: 'inner', label: 'In' })
+				],
+				snippetInclusions: [
+					{
+						id: 'inc-home-outer',
+						host_id: 'home',
+						snippet_id: 'outer',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-01T00:00:00.000Z',
+						updated_at: '2026-01-01T00:00:00.000Z'
+					},
+					{
+						id: 'inc-outer-inner',
+						host_id: 'outer',
+						snippet_id: 'inner',
+						origin_row: 0,
+						origin_col: 1,
+						created_at: '2026-01-02T00:00:00.000Z',
+						updated_at: '2026-01-02T00:00:00.000Z'
+					}
+				]
+			}),
+			[{ op: 'delete_board', id: 'outer' }]
+		);
+
+		expect(projected.boards.map((b) => b.id).sort()).toEqual(['home', 'inner']);
+		expect(projected.buttons.map((b) => b.id).sort()).toEqual(['cover', 'inner-btn']);
+		expect(projected.snippetInclusions).toEqual([]);
+	});
+
+	it('deleting a Board leaves Snippets and nested inclusions intact', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home' }),
+					board({
+						id: 'outer',
+						name: 'Outer',
+						displayName: 'Outer',
+						kind: 'snippet',
+						width: 2,
+						height: 1
+					}),
+					board({
+						id: 'inner',
+						name: 'Inner',
+						displayName: 'Inner',
+						kind: 'snippet',
+						width: 1,
+						height: 1
+					})
+				],
+				snippetInclusions: [
+					{
+						id: 'inc-home-outer',
+						host_id: 'home',
+						snippet_id: 'outer',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-01T00:00:00.000Z',
+						updated_at: '2026-01-01T00:00:00.000Z'
+					},
+					{
+						id: 'inc-outer-inner',
+						host_id: 'outer',
+						snippet_id: 'inner',
+						origin_row: 0,
+						origin_col: 0,
+						created_at: '2026-01-02T00:00:00.000Z',
+						updated_at: '2026-01-02T00:00:00.000Z'
+					}
+				]
+			}),
+			[{ op: 'delete_board', id: 'home' }]
+		);
+
+		expect(projected.boards.map((b) => b.id).sort()).toEqual(['inner', 'outer']);
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({ id: 'inc-outer-inner', host_id: 'outer', snippet_id: 'inner' })
+		]);
+	});
+
 	it('updates a Board from update_board', () => {
 		const projected = projectVocabulary(
 			live({ boards: [board({ id: 'board-1', name: 'Home', displayName: 'Home' })] }),

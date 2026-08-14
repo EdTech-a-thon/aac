@@ -128,64 +128,62 @@ function newerInclusion(a: LiveSnippetInclusion, b: LiveSnippetInclusion): LiveS
   return a.id >= b.id ? a : b;
 }
 
+function ownButtonAt(grid: LiveBoard, row: number, col: number): LiveButton | null {
+  const mapped = grid.buttons.filter(
+    (button) => button.row_index === row && button.col_index === col,
+  );
+  if (mapped.length === 0) return null;
+  return mapped.reduce(newerButton);
+}
+
+function contentAt(
+  grid: LiveBoard,
+  row: number,
+  col: number,
+  snapshot: LiveSnapshot,
+  boardsById: Map<string, LiveBoard>,
+  visiting: ReadonlySet<string>,
+): LiveButton | null {
+  if (row < 0 || col < 0 || row >= grid.height || col >= grid.width) return null;
+  const own = ownButtonAt(grid, row, col);
+  if (own) return own;
+  if (visiting.has(grid.id)) return null;
+  const nextVisiting = new Set(visiting);
+  nextVisiting.add(grid.id);
+  const inclusions = (snapshot.snippetInclusions ?? [])
+    .filter((inc) => inc.host_id === grid.id)
+    .sort((a, b) => (newerInclusion(a, b) === a ? -1 : 1));
+  for (const inclusion of inclusions) {
+    const snippet = boardsById.get(inclusion.snippet_id);
+    if (!snippet) continue;
+    const nested = contentAt(
+      snippet,
+      row - inclusion.origin_row,
+      col - inclusion.origin_col,
+      snapshot,
+      boardsById,
+      nextVisiting,
+    );
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function visibleCells(board: LiveBoard | null, snapshot: LiveSnapshot | null) {
   if (!board || !snapshot) return [];
   const grid: Array<Array<VisibleCell | null>> = Array.from(
     { length: board.height },
     () => Array.from({ length: board.width }, () => null),
   );
-  for (const button of board.buttons) {
-    if (
-      button.row_index < 0 ||
-      button.col_index < 0 ||
-      button.row_index >= board.height ||
-      button.col_index >= board.width
-    ) {
-      continue;
-    }
-    const existing = grid[button.row_index][button.col_index];
-    const winner = existing ? newerButton(existing.button, button) : button;
-    grid[button.row_index][button.col_index] = {
-      button: winner,
-      backgroundHex: resolveHex(winner, snapshot),
-    };
-  }
-
-  const hostInclusions = (snapshot.snippetInclusions ?? [])
-    .filter((inc) => inc.host_id === board.id)
-    .sort((a, b) => {
-      const newer = newerInclusion(a, b);
-      return newer === a ? -1 : 1;
-    });
-  const boardsById = new Map(snapshot.boards.map((b) => [b.id, b]));
-
+  const boardsById = new Map(snapshot.boards.map((item) => [item.id, item]));
   for (let row = 0; row < board.height; row++) {
     for (let col = 0; col < board.width; col++) {
-      if (grid[row][col]) continue;
-      for (const inclusion of hostInclusions) {
-        const snippet = boardsById.get(inclusion.snippet_id);
-        if (!snippet) continue;
-        const localRow = row - inclusion.origin_row;
-        const localCol = col - inclusion.origin_col;
-        if (
-          localRow < 0 ||
-          localCol < 0 ||
-          localRow >= snippet.height ||
-          localCol >= snippet.width
-        ) {
-          continue;
-        }
-        const mapped = snippet.buttons.filter(
-          (button) => button.row_index === localRow && button.col_index === localCol,
-        );
-        if (mapped.length === 0) continue;
-        const winner = mapped.reduce(newerButton);
-        grid[row][col] = {
-          button: winner,
-          backgroundHex: resolveHex(winner, snapshot),
-        };
-        break;
-      }
+      const winner = contentAt(board, row, col, snapshot, boardsById, new Set());
+      if (!winner) continue;
+      grid[row][col] = {
+        button: winner,
+        backgroundHex: resolveHex(winner, snapshot),
+      };
     }
   }
   return grid;

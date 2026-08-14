@@ -1,4 +1,5 @@
 import type { ChangeSetMutation } from './changeSetMutations';
+import { wouldCreateSnippetInclusionCycle } from './snippetInclusionCycle';
 import type { Board, BoardButton, PaletteColor, SnippetInclusion } from './types';
 
 export type ProjectedVocabulary = {
@@ -196,6 +197,15 @@ export function projectVocabulary(
 			const host = projected.boards.find((b) => b.id === mutation.host_id);
 			const snippet = projected.boards.find((b) => b.id === mutation.snippet_id);
 			if (!host || !snippet || snippet.kind !== 'snippet') continue;
+			if (
+				wouldCreateSnippetInclusionCycle(
+					projected.snippetInclusions,
+					mutation.host_id,
+					mutation.snippet_id
+				)
+			) {
+				continue;
+			}
 			projected.snippetInclusions.push({
 				id: mutation.id,
 				host_id: mutation.host_id,

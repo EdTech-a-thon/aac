@@ -12,6 +12,7 @@
 		DEFAULT_BUTTON_COLOR,
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
+	import { wouldCreateSnippetInclusionCycle } from '$lib/snippetInclusionCycle';
 	import {
 		isSnippet,
 		type Board,
@@ -179,6 +180,13 @@
 
 	const destinationBoards = $derived(boards.filter((board) => !isSnippet(board)));
 	const snippets = $derived(boards.filter(isSnippet));
+	const insertableSnippets = $derived.by(() => {
+		if (!selectedBoardId) return [] as Board[];
+		return snippets.filter(
+			(snippet) =>
+				!wouldCreateSnippetInclusionCycle(snippetInclusions, selectedBoardId, snippet.id)
+		);
+	});
 
 	function withGridKind(board: Board): Board {
 		return { ...board, kind: board.kind === 'snippet' ? 'snippet' : 'board' };
@@ -328,6 +336,53 @@
 
 	function cellSpanSize(count: number) {
 		return count * CELL + Math.max(0, count - 1) * GAP;
+	}
+
+	function mappedButtonsInInclusion(
+		snippetId: string,
+		originRow: number,
+		originCol: number,
+		visiting: Set<string> = new Set()
+	): { button: BoardButton; hostRow: number; hostCol: number }[] {
+		if (visiting.has(snippetId)) return [];
+		const snippet = boards.find((board) => board.id === snippetId);
+		if (!snippet) return [];
+		const nextVisiting = new Set(visiting);
+		nextVisiting.add(snippetId);
+		const mapped: { button: BoardButton; hostRow: number; hostCol: number }[] = [];
+		const nested = snippetInclusions
+			.filter((inc) => inc.host_id === snippetId)
+			.slice()
+			.sort((a, b) => {
+				if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+				return a.id < b.id ? -1 : 1;
+			});
+		for (const child of nested) {
+			mapped.push(
+				...mappedButtonsInInclusion(
+					child.snippet_id,
+					originRow + child.origin_row,
+					originCol + child.origin_col,
+					nextVisiting
+				)
+			);
+		}
+		for (const button of buttonsByBoardId[snippetId] ?? []) {
+			if (
+				button.row_index < 0 ||
+				button.col_index < 0 ||
+				button.row_index >= snippet.height ||
+				button.col_index >= snippet.width
+			) {
+				continue;
+			}
+			mapped.push({
+				button,
+				hostRow: originRow + button.row_index,
+				hostCol: originCol + button.col_index
+			});
+		}
+		return mapped;
 	}
 
 	function clampInclusionOrigin(
@@ -988,9 +1043,10 @@
 	}
 
 	function insertSnippetAt(snippetId: string, row: number, col: number) {
-		if (!selectedBoardId || !selectedBoard || isSnippet(selectedBoard)) return;
+		if (!selectedBoardId || !selectedBoard) return;
 		const snippet = boards.find((board) => board.id === snippetId && isSnippet(board));
 		if (!snippet) return;
+		if (wouldCreateSnippetInclusionCycle(snippetInclusions, selectedBoardId, snippetId)) return;
 		const now = new Date().toISOString();
 		const inclusion: SnippetInclusion = {
 			id: crypto.randomUUID(),
@@ -1558,7 +1614,11 @@
 										: inc.origin_col}
 								{@const clip = clippedInclusionRect(inc, originRow, originCol)}
 								{@const snippet = snippetForInclusion(inc)}
-								{@const innerButtons = buttonsByBoardId[inc.snippet_id] ?? []}
+								{@const innerButtons = mappedButtonsInInclusion(
+									inc.snippet_id,
+									originRow,
+									originCol
+								)}
 								{@const isDraggingInclusion =
 									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id}
 								{#if clip && snippet}
@@ -1584,18 +1644,16 @@
 											openSnippetCanvas(inc.snippet_id);
 										}}
 									>
-										{#each innerButtons as button (button.id)}
-											{@const hostRow = originRow + button.row_index}
-											{@const hostCol = originCol + button.col_index}
-											{#if hostRow >= clip.row &&
-												hostCol >= clip.col &&
-												hostRow < clip.row + clip.height &&
-												hostCol < clip.col + clip.width}
+										{#each innerButtons as mapped (`${mapped.button.id}:${mapped.hostRow}:${mapped.hostCol}`)}
+											{#if mapped.hostRow >= clip.row &&
+												mapped.hostCol >= clip.col &&
+												mapped.hostRow < clip.row + clip.height &&
+												mapped.hostCol < clip.col + clip.width}
 												<div
 													class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-lg border border-slate-300/80 px-2 text-center text-sm font-medium opacity-40"
-													style={`left: ${cellLeft(hostCol) - cellLeft(clip.col)}px; top: ${cellTop(hostRow) - cellTop(clip.row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(button)}; color: ${contrastingTextColor(resolveButtonHex(button))};`}
+													style={`left: ${cellLeft(mapped.hostCol) - cellLeft(clip.col)}px; top: ${cellTop(mapped.hostRow) - cellTop(clip.row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(mapped.button)}; color: ${contrastingTextColor(resolveButtonHex(mapped.button))};`}
 												>
-													<span class="line-clamp-3 break-words">{button.label}</span>
+													<span class="line-clamp-3 break-words">{mapped.button.label}</span>
 												</div>
 											{/if}
 										{/each}
@@ -1915,7 +1973,7 @@
 		>
 			Add button
 		</button>
-		{#if selectedBoard && !isSnippet(selectedBoard)}
+		{#if selectedBoard}
 			<button
 				type="button"
 				class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
@@ -1994,10 +2052,16 @@
 	}}
 >
 	{#if snippets.length === 0}
-		<p class="text-sm text-slate-600">Create a snippet first, then insert it on this board.</p>
+		<p class="text-sm text-slate-600">
+			Create a snippet first, then insert it on this {selectedGridNoun}.
+		</p>
+	{:else if insertableSnippets.length === 0}
+		<p class="text-sm text-slate-600">
+			No other Snippet can be included here without creating a cycle.
+		</p>
 	{:else}
 		<div class="flex max-h-72 flex-col gap-1 overflow-y-auto">
-			{#each snippets as snippet (snippet.id)}
+			{#each insertableSnippets as snippet (snippet.id)}
 				<button
 					type="button"
 					class="rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"

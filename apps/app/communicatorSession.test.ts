@@ -835,6 +835,145 @@ describe("Communicator session", () => {
     expect(session.getState().messageBar).toEqual(["I"]);
   });
 
+  it("flattens nested Snippet Inclusions onto the host Board", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 1 }),
+          {
+            ...board({
+              id: "outer",
+              width: 2,
+              height: 1,
+              buttons: [
+                button({
+                  id: "outer-btn",
+                  board_id: "outer",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Out",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "inner",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "inner-btn",
+                  board_id: "inner",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "In",
+                  action: { kind: "insert_phrase", phrase: "in" },
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-home-outer",
+            host_id: "home",
+            snippet_id: "outer",
+            origin_row: 0,
+            origin_col: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-outer-inner",
+            host_id: "outer",
+            snippet_id: "inner",
+            origin_row: 0,
+            origin_col: 1,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const cells = session.getState().visibleCells;
+    expect(cells[0]?.[1]?.button.id).toBe("outer-btn");
+    expect(cells[0]?.[2]?.button.id).toBe("inner-btn");
+    session.tap(0, 2);
+    expect(session.getState().messageBar).toEqual(["in"]);
+  });
+
+  it("lets a Snippet's own Button cover nested inclusion content", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 2, height: 1 }),
+          {
+            ...board({
+              id: "outer",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "cover",
+                  board_id: "outer",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Cover",
+                  created_at: "2026-01-01T00:00:00Z",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "inner",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "under",
+                  board_id: "inner",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Under",
+                  created_at: "2026-01-03T00:00:00Z",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-home-outer",
+            host_id: "home",
+            snippet_id: "outer",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-outer-inner",
+            host_id: "outer",
+            snippet_id: "inner",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[0]?.button.id).toBe("cover");
+  });
+
   it("appends Insert Phrase and joins the Message Bar with a single space", () => {
     const session = createCommunicatorSession(speechSpy());
     session.open(
