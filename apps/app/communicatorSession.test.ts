@@ -263,6 +263,428 @@ describe("Communicator session", () => {
     expect(session.getState().visibleCells[0]?.[0]?.button.id).toBe("cover");
   });
 
+  it("lets the newest inclusion's Button win when two inclusions map a Button to the same cell", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 3, height: 3 }),
+          {
+            ...board({
+              id: "top",
+              width: 3,
+              height: 1,
+              buttons: [
+                button({
+                  id: "top-corner",
+                  board_id: "top",
+                  row_index: 0,
+                  col_index: 2,
+                  label: "Top",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "side",
+              width: 1,
+              height: 3,
+              buttons: [
+                button({
+                  id: "side-corner",
+                  board_id: "side",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Side",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-top",
+            host_id: "home",
+            snippet_id: "top",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-side",
+            host_id: "home",
+            snippet_id: "side",
+            origin_row: 0,
+            origin_col: 2,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[2]?.button.id).toBe("side-corner");
+  });
+
+  it("punches through empty cells in a newer inclusion to an older inclusion's Button", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 3, height: 3 }),
+          {
+            ...board({
+              id: "top",
+              width: 3,
+              height: 1,
+              buttons: [
+                button({
+                  id: "top-left",
+                  board_id: "top",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "A",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "side",
+              width: 1,
+              height: 3,
+              buttons: [
+                button({
+                  id: "side-corner",
+                  board_id: "side",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "C",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-side",
+            host_id: "home",
+            snippet_id: "side",
+            origin_row: 0,
+            origin_col: 2,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-top",
+            host_id: "home",
+            snippet_id: "top",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const cells = session.getState().visibleCells;
+    expect(cells[0]?.[0]?.button.id).toBe("top-left");
+    expect(cells[0]?.[2]?.button.id).toBe("side-corner");
+  });
+
+  it("draws the same Snippet twice on one host as separate inclusions", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 1 }),
+          {
+            ...board({
+              id: "snip",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "hi",
+                  board_id: "snip",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Hi",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-a",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-b",
+            host_id: "home",
+            snippet_id: "snip",
+            origin_row: 0,
+            origin_col: 2,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const cells = session.getState().visibleCells;
+    expect(cells[0]?.[0]?.button.id).toBe("hi");
+    expect(cells[0]?.[2]?.button.id).toBe("hi");
+    expect(cells[0]?.[1]).toBeNull();
+  });
+
+  it("lets a host Button cover overlapping inclusion content", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "home",
+            width: 3,
+            height: 3,
+            buttons: [
+              button({
+                id: "cover",
+                board_id: "home",
+                row_index: 0,
+                col_index: 2,
+                label: "Cover",
+                created_at: "2026-01-01T00:00:00Z",
+              }),
+            ],
+          }),
+          {
+            ...board({
+              id: "top",
+              width: 3,
+              height: 1,
+              buttons: [
+                button({
+                  id: "top-corner",
+                  board_id: "top",
+                  row_index: 0,
+                  col_index: 2,
+                  label: "Top",
+                  created_at: "2026-01-04T00:00:00Z",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "side",
+              width: 1,
+              height: 3,
+              buttons: [
+                button({
+                  id: "side-corner",
+                  board_id: "side",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "Side",
+                  created_at: "2026-01-04T00:00:00Z",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-top",
+            host_id: "home",
+            snippet_id: "top",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-02T00:00:00Z",
+            updated_at: "2026-01-02T00:00:00Z",
+          },
+          {
+            id: "inc-side",
+            host_id: "home",
+            snippet_id: "side",
+            origin_row: 0,
+            origin_col: 2,
+            created_at: "2026-01-03T00:00:00Z",
+            updated_at: "2026-01-03T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[2]?.button.id).toBe("cover");
+  });
+
+  it("breaks a newest-inclusion tie with the higher identifier", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 1, height: 1 }),
+          {
+            ...board({
+              id: "older-id",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "from-a",
+                  board_id: "older-id",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "A",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+          {
+            ...board({
+              id: "newer-id",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "from-b",
+                  board_id: "newer-id",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "B",
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-a",
+            host_id: "home",
+            snippet_id: "older-id",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "inc-b",
+            host_id: "home",
+            snippet_id: "newer-id",
+            origin_row: 0,
+            origin_col: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[0]?.button.id).toBe("from-b");
+  });
+
+  it("grows inclusion occupancy when the Snippet is resized; origins stay put", () => {
+    const session = createCommunicatorSession(speechSpy());
+    const snipButtons = [
+      button({
+        id: "row0",
+        board_id: "snip",
+        row_index: 0,
+        col_index: 0,
+        label: "Row0",
+      }),
+      button({
+        id: "row1",
+        board_id: "snip",
+        row_index: 1,
+        col_index: 0,
+        label: "Row1",
+      }),
+    ];
+    const inclusion = {
+      id: "inc-1",
+      host_id: "home",
+      snippet_id: "snip",
+      origin_row: 0,
+      origin_col: 1,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 3 }),
+          {
+            ...board({
+              id: "snip",
+              width: 2,
+              height: 1,
+              buttons: snipButtons,
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [inclusion],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[1]?.button.id).toBe("row0");
+    expect(session.getState().visibleCells[1]?.[1]).toBeNull();
+
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 3 }),
+          {
+            ...board({
+              id: "snip",
+              width: 2,
+              height: 2,
+              buttons: snipButtons,
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [inclusion],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[1]?.button.id).toBe("row0");
+    expect(session.getState().visibleCells[1]?.[1]?.button.id).toBe("row1");
+
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "home", width: 4, height: 3 }),
+          {
+            ...board({
+              id: "snip",
+              width: 2,
+              height: 1,
+              buttons: snipButtons,
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [inclusion],
+      }),
+    );
+    expect(session.getState().visibleCells[0]?.[1]?.button.id).toBe("row0");
+    expect(session.getState().visibleCells[1]?.[1]).toBeNull();
+  });
+
   it("hides inclusion cells that sit outside the host viewport", () => {
     const session = createCommunicatorSession(speechSpy());
     session.open(

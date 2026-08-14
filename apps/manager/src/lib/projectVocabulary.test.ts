@@ -312,6 +312,167 @@ describe('projectVocabulary', () => {
 		]);
 	});
 
+	it('includes the same Snippet more than once on one host', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home', width: 8, height: 4 }),
+					board({
+						id: 'snip-1',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-a',
+					host_id: 'home',
+					snippet_id: 'snip-1',
+					origin_row: 0,
+					origin_col: 0
+				},
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-b',
+					host_id: 'home',
+					snippet_id: 'snip-1',
+					origin_row: 2,
+					origin_col: 0
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({
+				id: 'inc-a',
+				host_id: 'home',
+				snippet_id: 'snip-1',
+				origin_row: 0,
+				origin_col: 0
+			}),
+			expect.objectContaining({
+				id: 'inc-b',
+				host_id: 'home',
+				snippet_id: 'snip-1',
+				origin_row: 2,
+				origin_col: 0
+			})
+		]);
+	});
+
+	it('keeps overlapping inclusions of different Snippets on one host', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home', width: 6, height: 6 }),
+					board({
+						id: 'top',
+						name: 'Top',
+						displayName: 'Top',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					}),
+					board({
+						id: 'side',
+						name: 'Side',
+						displayName: 'Side',
+						kind: 'snippet',
+						width: 1,
+						height: 6
+					})
+				]
+			}),
+			[
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-top',
+					host_id: 'home',
+					snippet_id: 'top',
+					origin_row: 0,
+					origin_col: 0
+				},
+				{
+					op: 'create_snippet_inclusion',
+					id: 'inc-side',
+					host_id: 'home',
+					snippet_id: 'side',
+					origin_row: 0,
+					origin_col: 5
+				}
+			]
+		);
+
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({
+				id: 'inc-top',
+				host_id: 'home',
+				snippet_id: 'top',
+				origin_row: 0,
+				origin_col: 0
+			}),
+			expect.objectContaining({
+				id: 'inc-side',
+				host_id: 'home',
+				snippet_id: 'side',
+				origin_row: 0,
+				origin_col: 5
+			})
+		]);
+	});
+
+	it('resizing a Snippet leaves inclusion origins in place', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [
+					board({ id: 'home', width: 6, height: 4 }),
+					board({
+						id: 'snip-1',
+						name: 'Strip',
+						displayName: 'Strip',
+						kind: 'snippet',
+						width: 6,
+						height: 1
+					})
+				],
+				snippetInclusions: [
+					{
+						id: 'inc-1',
+						host_id: 'home',
+						snippet_id: 'snip-1',
+						origin_row: 0,
+						origin_col: 1,
+						created_at: '2026-01-01T00:00:00.000Z',
+						updated_at: '2026-01-01T00:00:00.000Z'
+					},
+					{
+						id: 'inc-2',
+						host_id: 'home',
+						snippet_id: 'snip-1',
+						origin_row: 2,
+						origin_col: 0,
+						created_at: '2026-01-02T00:00:00.000Z',
+						updated_at: '2026-01-02T00:00:00.000Z'
+					}
+				]
+			}),
+			[{ op: 'update_board', id: 'snip-1', width: 6, height: 2 }]
+		);
+
+		expect(projected.boards.find((b) => b.id === 'snip-1')).toEqual(
+			expect.objectContaining({ id: 'snip-1', width: 6, height: 2, kind: 'snippet' })
+		);
+		expect(projected.snippetInclusions).toEqual([
+			expect.objectContaining({ id: 'inc-1', origin_row: 0, origin_col: 1 }),
+			expect.objectContaining({ id: 'inc-2', origin_row: 2, origin_col: 0 })
+		]);
+	});
+
 	it('updates a Board from update_board', () => {
 		const projected = projectVocabulary(
 			live({ boards: [board({ id: 'board-1', name: 'Home', displayName: 'Home' })] }),

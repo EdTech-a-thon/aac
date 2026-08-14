@@ -4,13 +4,13 @@
 
 **Blocked by:** 02 — Live Snippet Inclusion on a Board
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A host may include any number of Snippets, including the same Snippet more than once
-- [ ] Overlapping inclusions are allowed (e.g. top row and right column sharing a corner)
-- [ ] Communicator: when two inclusions both map a Button to the same cell, the newest inclusion wins (tie: higher identifier)
-- [ ] Communicator: empty cells in an inclusion are transparent; older inclusions may show through
-- [ ] Manager: click still selects the newest inclusion whose rectangle contains the point, even if flattened content at that point comes from an older inclusion
-- [ ] Host Buttons still beat all inclusion content
-- [ ] Changing a Snippet’s width or height updates every inclusion’s occupied rectangle; origins do not move
-- [ ] Tests at Projected Vocabulary and Communicator session
+- [x] A host may include any number of Snippets, including the same Snippet more than once
+- [x] Overlapping inclusions are allowed (e.g. top row and right column sharing a corner)
+- [x] Communicator: when two inclusions both map a Button to the same cell, the newest inclusion wins (tie: higher identifier)
+- [x] Communicator: empty cells in an inclusion are transparent; older inclusions may show through
+- [x] Manager: click still selects the newest inclusion whose rectangle contains the point, even if flattened content at that point comes from an older inclusion
+- [x] Host Buttons still beat all inclusion content
+- [x] Changing a Snippet’s width or height updates every inclusion’s occupied rectangle; origins do not move
+- [x] Tests at Projected Vocabulary and Communicator session

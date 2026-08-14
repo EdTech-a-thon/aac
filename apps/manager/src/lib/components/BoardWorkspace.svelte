@@ -1547,7 +1547,7 @@
 								</button>
 							{/each}
 
-							{#each hostInclusions as inc (inc.id)}
+							{#each hostInclusions as inc, paintOrder (inc.id)}
 								{@const originRow =
 									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id
 										? inclusionDrag.currentOriginRow
@@ -1559,17 +1559,18 @@
 								{@const clip = clippedInclusionRect(inc, originRow, originCol)}
 								{@const snippet = snippetForInclusion(inc)}
 								{@const innerButtons = buttonsByBoardId[inc.snippet_id] ?? []}
+								{@const isDraggingInclusion =
+									inclusionDrag?.active && inclusionDrag.inclusionId === inc.id}
 								{#if clip && snippet}
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<div
-										class="absolute z-[1] overflow-hidden rounded-lg {selectedInclusionId ===
+										class="absolute overflow-hidden rounded-lg {selectedInclusionId ===
 										inc.id
 											? 'cursor-grab ring-2 ring-violet-500 ring-offset-1'
-											: 'cursor-grab ring-1 ring-violet-300/70'} {inclusionDrag?.active &&
-										inclusionDrag.inclusionId === inc.id
+											: 'cursor-grab ring-1 ring-violet-300/70'} {isDraggingInclusion
 											? 'cursor-grabbing'
 											: ''}"
-										style={`left: ${cellLeft(clip.col)}px; top: ${cellTop(clip.row)}px; width: ${cellSpanSize(clip.width)}px; height: ${cellSpanSize(clip.height)}px;`}
+										style={`left: ${cellLeft(clip.col)}px; top: ${cellTop(clip.row)}px; width: ${cellSpanSize(clip.width)}px; height: ${cellSpanSize(clip.height)}px; z-index: ${isDraggingInclusion ? 900 : 1 + paintOrder};`}
 										role="button"
 										tabindex="0"
 										aria-label={`Snippet inclusion ${snippet.displayName} at ${cellRef(inc.origin_row, inc.origin_col)}`}
@@ -1609,7 +1610,7 @@
 									drag.buttonId
 								)}
 								<div
-									class="pointer-events-none absolute z-20 rounded-lg {dropBlocked
+									class="pointer-events-none absolute z-[1005] rounded-lg {dropBlocked
 										? ''
 										: 'bg-slate-700/25'}"
 									style={`left: ${cellLeft(drag.currentCol)}px; top: ${cellTop(drag.currentRow)}px; width: ${CELL}px; height: ${CELL}px;${
@@ -1638,10 +1639,10 @@
 									: cellTop(button.row_index)}
 								<button
 									type="button"
-									class="absolute z-[5] flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
-										? 'z-30 cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
+									class="absolute z-[1000] flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
+										? 'z-[1010] cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
 										: selectedButtonId === button.id
-											? 'z-10 cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
+											? 'z-[1001] cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
 											: inViewport
 												? 'cursor-grab border-slate-300 shadow-sm transition hover:border-slate-400'
 												: 'cursor-grab border-amber-300 shadow-sm transition hover:border-amber-400'}"
