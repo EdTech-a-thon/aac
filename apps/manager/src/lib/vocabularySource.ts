@@ -165,3 +165,20 @@ export function sharedVocabularySource(content: VocabularyContent): VocabularySo
 		revokeBoardShareLink: refused
 	};
 }
+
+/**
+ * Keep what a Share Link showed you as a Vocabulary of your own. The snapshot
+ * is the Visitor's visible state, their edits folded in.
+ */
+export function saveSharedVocabulary(
+	token: string,
+	accessToken: string,
+	name: string,
+	snapshot: unknown
+): Promise<{ vocabulary: Vocabulary }> {
+	return apiFetch<{ vocabulary: Vocabulary }>(`/shared/${token}/save`, {
+		method: 'POST',
+		accessToken,
+		body: JSON.stringify({ name, snapshot })
+	});
+}

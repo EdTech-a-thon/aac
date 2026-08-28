@@ -1,9 +1,13 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import BoardWorkspace from '$lib/components/BoardWorkspace.svelte';
+	import Modal from '$lib/components/Modal.svelte';
+	import VisitorSignIn from '$lib/components/VisitorSignIn.svelte';
 	import { readAuth } from '$lib/auth';
 	import {
 		loadSharedVocabulary,
+		saveSharedVocabulary,
 		sharedVocabularySource,
 		type SharedVocabulary,
 		type VocabularySource
@@ -13,7 +17,8 @@
 		editorDraftState,
 		getVocabularyEditorSession,
 		isEditorDirty,
-		subscribeEditorRevision
+		subscribeEditorRevision,
+		visibleVocabularySnapshot
 	} from '$lib/vocabularyEditorSession';
 	import {
 		browserDraftStorage,
@@ -43,7 +48,15 @@
 		})
 	);
 
-	const signedIn = $derived(readAuth() != null);
+	let authTick = $state(0);
+	const signedIn = $derived.by(() => {
+		authTick;
+		return readAuth() != null;
+	});
+
+	let signInOpen = $state(false);
+	let saving = $state(false);
+	let saveError = $state<string | null>(null);
 
 	// A Board Share Link is named by its Board; a Vocabulary link by the Vocabulary.
 	const title = $derived(
@@ -105,6 +118,42 @@
 		draftSettled = true;
 	}
 
+	async function keepThis() {
+		const currentShared = shared;
+		if (!currentShared || saving) return;
+		const auth = readAuth();
+		if (!auth) {
+			signInOpen = true;
+			return;
+		}
+		saving = true;
+		saveError = null;
+		try {
+			const session = getVocabularyEditorSession(currentShared.vocabulary.id);
+			const saved = await saveSharedVocabulary(
+				token,
+				auth.session.access_token,
+				currentShared.vocabulary.name,
+				visibleVocabularySnapshot(session)
+			);
+			// It is theirs now, so the draft has nothing left to protect.
+			const storage = browserDraftStorage();
+			if (storage) clearVisitorDraft(storage, token);
+			await goto(`/vocabularies/${saved.vocabulary.id}`);
+		} catch (err) {
+			// A link revoked while they worked must not cost them their edits.
+			saveError = err instanceof Error ? err.message : 'Could not save this';
+		} finally {
+			saving = false;
+		}
+	}
+
+	function onauthed() {
+		signInOpen = false;
+		authTick += 1;
+		void keepThis();
+	}
+
 	function startOver() {
 		const storage = browserDraftStorage();
 		if (storage) clearVisitorDraft(storage, token);
@@ -140,6 +189,16 @@
 				</p>
 			</div>
 			<div class="flex shrink-0 items-center gap-2">
+				{#if !shared.board}
+					<button
+						type="button"
+						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+						disabled={saving}
+						onclick={keepThis}
+					>
+						{saving ? 'Saving…' : signedIn ? 'Save to my account' : 'Sign in to save'}
+					</button>
+				{/if}
 				{#if savedAt}
 					<span class="text-sm text-slate-500">Your changes are kept on this device</span>
 					<button
@@ -160,6 +219,12 @@
 				{/if}
 			</div>
 		</header>
+
+		{#if saveError}
+			<p class="shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+				{saveError}
+			</p>
+		{/if}
 
 		{#if keptDraft && !draftSettled}
 			<div
@@ -192,3 +257,7 @@
 		</div>
 	{/if}
 </div>
+
+<Modal bind:open={signInOpen} title="Save this to your account">
+	<VisitorSignIn {onauthed} />
+</Modal>

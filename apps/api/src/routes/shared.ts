@@ -1,5 +1,10 @@
 import { Hono } from "hono";
 import { createServiceSupabaseClient } from "../supabase.ts";
+import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
+import {
+  remapVocabularySnapshot,
+  type VocabularyCopySnapshot,
+} from "../copyVocabulary.ts";
 import { withDisplayName } from "../displayName.ts";
 import { scopeBoardShare } from "../shareScope.ts";
 
@@ -9,7 +14,7 @@ import { scopeBoardShare } from "../shareScope.ts";
  * and reads with the service role, which is why no table grants anon access.
  * See ADR 0010.
  */
-export const sharedRoutes = new Hono();
+export const sharedRoutes = new Hono<{ Variables: AuthVariables }>();
 
 /**
  * Revoked, deleted, and never-existed all look the same from outside. A link
@@ -179,4 +184,43 @@ sharedRoutes.get("/:token", async (c) => {
       unresolvedCopyActions: [],
     },
   });
+});
+
+/**
+ * Keep what a Share Link showed you. The snapshot is what the Visitor could
+ * see, their own edits folded in, and it becomes the Initial Snapshot of a
+ * Vocabulary they alone manage. The source is not touched. See ADR 0011.
+ */
+sharedRoutes.post("/:token/save", requireAuth, async (c) => {
+  const token = c.req.param("token");
+  if (!looksLikeToken(token)) return c.json(UNAVAILABLE, 404);
+
+  const service = createServiceSupabaseClient();
+  const linkResult = await service
+    .from("share_links")
+    .select("vocabulary_id, board_id")
+    .eq("token", token)
+    .maybeSingle();
+  if (linkResult.error || !linkResult.data) return c.json(UNAVAILABLE, 404);
+  const link = linkResult.data as ShareLinkRow;
+
+  // Keeping a shared Board chooses a destination, which is its own route.
+  if (link.board_id !== null) return c.json(UNAVAILABLE, 404);
+
+  const body = await c.req
+    .json<{ name?: string; snapshot?: VocabularyCopySnapshot }>()
+    .catch((): { name?: string; snapshot?: VocabularyCopySnapshot } => ({}));
+  if (!body.snapshot) return c.json({ error: "snapshot is required" }, 400);
+
+  const copied = remapVocabularySnapshot(body.snapshot);
+  const { data, error } = await c.get("supabase").rpc(
+    "create_vocabulary_from_snapshot",
+    {
+      p_name: typeof body.name === "string" ? body.name : "",
+      p_initial_snapshot: copied.initialSnapshot,
+      p_mutations: copied.mutations,
+    },
+  );
+  if (error) return c.json({ error: error.message }, 400);
+  return c.json({ vocabulary: withDisplayName(data as { id: string; name: string }) }, 201);
 });

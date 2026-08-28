@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Management entails Usage; 05 — A Visitor edits what they were sent.
 
-**Status:** ready-for-agent
+**Status:** implemented, unverified — covered by integration tests that stay red until the Share Link and snapshot migrations are applied
 
 - [ ] A Visitor with edits can sign in from the public view and save; the resulting Vocabulary contains exactly what they were looking at, edits included.
 - [ ] A Visitor with no edits can save; the result is the source's live state at the moment of saving.
