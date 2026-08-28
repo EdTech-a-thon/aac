@@ -1838,8 +1838,9 @@
 
 						<div class="space-y-2">
 							<span class="text-xs font-medium tracking-wide text-slate-500 uppercase">
-								Symbol
+								Symbol / Picture
 							</span>
+							<p class="text-xs text-slate-500">Upload a picture to use as this Button's Symbol.</p>
 							<div class="flex items-center gap-3">
 								<div
 									class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-white"
@@ -1862,10 +1863,10 @@
 										onclick={() => symbolInput?.click()}
 									>
 										{symbolBusy
-											? 'Adding…'
+											? 'Uploading…'
 											: selectedButton.symbol_digest
-												? 'Replace Symbol'
-												: 'Add Symbol'}
+												? 'Replace Picture'
+												: 'Upload Picture'}
 									</button>
 									<button
 										type="button"
