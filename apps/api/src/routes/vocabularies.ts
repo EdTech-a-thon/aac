@@ -279,7 +279,8 @@ vocabularyRoutes.get("/:id/live", async (c) => {
       .from("boards")
       .select("id, vocabulary_id, name, width, height, kind, created_at, updated_at")
       .eq("vocabulary_id", id)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
     supabase
       .from("palette_colors")
       .select(
@@ -312,14 +313,16 @@ vocabularyRoutes.get("/:id/live", async (c) => {
           "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, symbol_digest, created_at, updated_at",
         )
         .in("board_id", boardIds)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
       supabase
         .from("snippet_inclusions")
         .select(
           "id, host_id, snippet_id, origin_row, origin_col, created_at, updated_at",
         )
         .in("host_id", boardIds)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
     ]);
     if (buttonsResult.error) {
       return c.json({ error: pgErrorMessage(buttonsResult.error) }, 400);
@@ -416,7 +419,8 @@ vocabularyRoutes.get("/:id/boards", async (c) => {
     .from("boards")
     .select("id, vocabulary_id, name, width, height, kind, created_at, updated_at")
     .eq("vocabulary_id", id)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
@@ -465,7 +469,8 @@ vocabularyRoutes.get("/:id/snippet-inclusions", async (c) => {
     .from("snippet_inclusions")
     .select("id, host_id, snippet_id, origin_row, origin_col, created_at, updated_at")
     .in("host_id", boardIds)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
@@ -514,7 +519,8 @@ vocabularyRoutes.get("/:id/boards/:boardId/buttons", async (c) => {
       "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, symbol_digest, created_at, updated_at",
     )
     .eq("board_id", boardId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
