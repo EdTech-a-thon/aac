@@ -170,6 +170,9 @@ function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContex
 			if (mutation.action !== undefined) {
 				parts.push(`Action ${actionSummary(mutation.action, ctx)}`);
 			}
+			if (mutation.symbol_digest) {
+				parts.push('with a Symbol');
+			}
 			return parts.join('; ');
 		}
 		case 'update_button': {
@@ -206,6 +209,9 @@ function describeMutation(mutation: ChangeSetMutation, ctx: MutationLookupContex
 			}
 			if (mutation.action !== undefined) {
 				parts.push(`set Action to ${actionSummary(mutation.action, ctx)}`);
+			}
+			if (mutation.symbol_digest !== undefined) {
+				parts.push(mutation.symbol_digest ? 'set Symbol' : 'remove Symbol');
 			}
 			const detail = parts.length > 0 ? `: ${parts.join('; ')}` : '';
 			return `Update ${phrase}${onBoard}${detail}`;

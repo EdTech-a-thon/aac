@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { columnLetter, rowNumber } from '$lib/boardCellRef';
-	import {
-		contrastingTextColor,
-		DEFAULT_BUTTON_COLOR
-	} from '$lib/fitzgeraldColors';
+	import ButtonFace from '$lib/components/ButtonFace.svelte';
+	import { symbolUrl } from '$lib/auth';
+	import { resolveButtonHex } from '$lib/buttonFace';
+	import { contrastingTextColor } from '$lib/fitzgeraldColors';
 	import type { PreviewButton, PreviewOverlay } from '$lib/groupSuggestedChanges';
 
 	let {
@@ -47,10 +47,7 @@
 	}
 
 	function resolveHex(button: PreviewButton) {
-		if (button.palette_color_id && paletteById[button.palette_color_id]) {
-			return paletteById[button.palette_color_id];
-		}
-		return button.background_color ?? DEFAULT_BUTTON_COLOR;
+		return resolveButtonHex(button, paletteById);
 	}
 
 	const gridW = $derived(width * CELL + Math.max(0, width - 1) * GAP);
@@ -104,10 +101,14 @@
 
 			{#each buttons as button (button.id)}
 				<div
-					class="absolute flex items-center justify-center overflow-hidden rounded-md border border-slate-300 px-0.5 text-center text-[9px] font-medium leading-tight"
+					class="absolute overflow-hidden rounded-md border border-slate-300"
 					style={`left: ${cellLeft(button.col_index)}px; top: ${cellTop(button.row_index)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveHex(button)}; color: ${contrastingTextColor(resolveHex(button))};`}
 				>
-					<span class="line-clamp-2 break-words">{button.label}</span>
+					<ButtonFace
+						label={button.label}
+						symbolSrc={button.symbol_digest ? symbolUrl(button.symbol_digest) : null}
+						variant="preview"
+					/>
 				</div>
 			{/each}
 

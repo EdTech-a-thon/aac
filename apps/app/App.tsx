@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
   apiFetch,
   clearAuth,
   readAuth,
+  symbolUrl,
   writeAuth,
   type AuthState,
   type AuthUser,
@@ -38,6 +40,26 @@ function emailRedirectTo() {
   }
   return "http://localhost:8081/?emailConfirmed=1";
 }
+
+/**
+ * Warm every distinct Symbol in the Vocabulary when it opens, so a Board's
+ * images appear together rather than popping in one at a time, and moving
+ * between Boards mid-sentence is instant. Safe to cache forever: the bytes
+ * behind a digest can never change.
+ */
+function prefetchSymbols(snapshot: LiveSnapshot) {
+  const digests = new Set<string>();
+  for (const board of snapshot.boards) {
+    for (const button of board.buttons) {
+      if (button.symbol_digest) digests.add(button.symbol_digest);
+    }
+  }
+  for (const digest of digests) {
+    const uri = symbolUrl(digest);
+    if (uri) void Image.prefetch(uri);
+  }
+}
+
 
 export default function App() {
   const session = useMemo(() => createCommunicatorSession(deviceSpeech), []);
@@ -179,6 +201,7 @@ export default function App() {
         { accessToken: token },
       );
       session.open(data.snapshot);
+      prefetchSymbols(data.snapshot);
       bump();
       setFailedOpenId(null);
       setScreen("vocab");
@@ -366,7 +389,20 @@ export default function App() {
                       bump();
                     }}
                   >
-                    <Text style={styles.cellLabel}>{cell?.button.label ?? ""}</Text>
+                    {cell?.button.symbol_digest ? (
+                      <View style={styles.cellWithSymbol}>
+                        <Text style={styles.cellSymbolLabel} numberOfLines={1}>
+                          {cell.button.label}
+                        </Text>
+                        <Image
+                          style={styles.cellSymbol}
+                          source={{ uri: symbolUrl(cell.button.symbol_digest) ?? "" }}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    ) : (
+                      <Text style={styles.cellLabel}>{cell?.button.label ?? ""}</Text>
+                    )}
                   </Pressable>
                 ))}
               </View>
@@ -505,5 +541,20 @@ const styles = StyleSheet.create({
   cellLabel: {
     fontSize: 16,
     textAlign: "center",
+  },
+  cellWithSymbol: {
+    flex: 1,
+    alignSelf: "stretch",
+  },
+  // Reserved even when the label is blank, so Symbols stay aligned across a row.
+  cellSymbolLabel: {
+    fontSize: 12,
+    lineHeight: 16,
+    height: 16,
+    textAlign: "center",
+  },
+  cellSymbol: {
+    flex: 1,
+    width: "100%",
   },
 });

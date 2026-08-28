@@ -20,6 +20,7 @@ export type LiveButton = {
   background_color: string | null;
   palette_color_id: string | null;
   action: ButtonAction | null;
+  symbol_digest: string | null;
   created_at: string;
   updated_at: string;
 };

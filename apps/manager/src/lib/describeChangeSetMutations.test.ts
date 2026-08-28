@@ -249,3 +249,51 @@ describe('normalizeSuggestedChangeSets', () => {
 		]);
 	});
 });
+
+describe('describeChangeSetMutations Symbol', () => {
+	const DIGEST = 'c'.repeat(64);
+
+	it('says a created Button carries a Symbol', () => {
+		expect(
+			describeChangeSetMutations(
+				[
+					{
+						op: 'create_button',
+						id: 'btn-new',
+						board_id: 'board-1',
+						row_index: 0,
+						col_index: 0,
+						label: 'drink',
+						symbol_digest: DIGEST
+					}
+				],
+				ctx
+			)[0]
+		).toContain('Symbol');
+	});
+
+	it('says a Symbol is set on a named Button', () => {
+		const [line] = describeChangeSetMutations(
+			[{ op: 'update_button', id: 'btn-1', symbol_digest: DIGEST }],
+			ctx
+		);
+		expect(line).toContain('set Symbol');
+		expect(line).toContain('eat');
+	});
+
+	it('says a Symbol is removed', () => {
+		const [line] = describeChangeSetMutations(
+			[{ op: 'update_button', id: 'btn-1', symbol_digest: null }],
+			ctx
+		);
+		expect(line).toContain('remove Symbol');
+	});
+
+	it('does not mention a Symbol when the mutation does not touch one', () => {
+		const [line] = describeChangeSetMutations(
+			[{ op: 'update_button', id: 'btn-1', label: 'food' }],
+			ctx
+		);
+		expect(line).not.toContain('Symbol');
+	});
+});

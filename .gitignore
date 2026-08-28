@@ -55,3 +55,6 @@ vite.config.ts.timestamp-*
 # generated native folders
 /ios
 /android
+
+# Supabase CLI scratch
+supabase/.temp/

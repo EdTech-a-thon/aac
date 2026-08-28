@@ -17,6 +17,7 @@ export type ButtonSnapshot = {
 	background_color: string | null;
 	palette_color_id: string | null;
 	action: ButtonAction | null;
+	symbol_digest: string | null;
 };
 
 export type PaletteColorSnapshot = {
@@ -62,6 +63,7 @@ export type ChangeSetMutation =
 			background_color?: string | null;
 			palette_color_id?: string | null;
 			action?: ButtonAction | null;
+			symbol_digest?: string | null;
 	  }
 	| {
 			op: 'update_button';
@@ -73,6 +75,7 @@ export type ChangeSetMutation =
 			background_color?: string | null;
 			palette_color_id?: string | null;
 			action?: ButtonAction | null;
+			symbol_digest?: string | null;
 	  }
 	| { op: 'delete_button'; id: string }
 	| {
@@ -113,7 +116,7 @@ function boardKey(board: BoardSnapshot) {
 }
 
 function buttonKey(button: ButtonSnapshot) {
-	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color ?? ''}\0${button.palette_color_id ?? ''}\0${actionKey(button.action)}`;
+	return `${button.board_id}\0${button.row_index}\0${button.col_index}\0${button.label}\0${button.background_color ?? ''}\0${button.palette_color_id ?? ''}\0${actionKey(button.action)}\0${button.symbol_digest ?? ''}`;
 }
 
 /** Diff last-synced server snapshots against current local editor state. */
@@ -179,6 +182,7 @@ export function diffBoardButtonMutations(
 				create.palette_color_id = null;
 			}
 			if (button.action) create.action = button.action;
+			if (button.symbol_digest) create.symbol_digest = button.symbol_digest;
 			mutations.push(create);
 		} else if (buttonKey(base) !== buttonKey(button)) {
 			const update: Extract<ChangeSetMutation, { op: 'update_button' }> = {
@@ -202,6 +206,9 @@ export function diffBoardButtonMutations(
 			}
 			if (actionKey(base.action) !== actionKey(button.action)) {
 				update.action = button.action;
+			}
+			if (base.symbol_digest !== button.symbol_digest) {
+				update.symbol_digest = button.symbol_digest;
 			}
 			mutations.push(update);
 		}

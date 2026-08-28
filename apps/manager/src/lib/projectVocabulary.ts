@@ -119,6 +119,7 @@ export function projectVocabulary(
 					projected,
 					mutation.action !== undefined ? mutation.action : null
 				),
+				symbol_digest: mutation.symbol_digest ?? null,
 				created_at: now,
 				updated_at: now
 			};
@@ -142,6 +143,9 @@ export function projectVocabulary(
 			if (mutation.label !== undefined) existing.label = mutation.label;
 			if (mutation.action !== undefined) {
 				existing.action = persistableAction(projected, mutation.action);
+			}
+			if (mutation.symbol_digest !== undefined) {
+				existing.symbol_digest = mutation.symbol_digest;
 			}
 			applyButtonColorXor(existing, mutation);
 			existing.updated_at = now;

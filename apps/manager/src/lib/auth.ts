@@ -79,3 +79,24 @@ export async function apiFetch<T>(
 
 	return data as T;
 }
+
+/**
+ * A Symbol's bytes, addressed by digest. The API redirects to the public
+ * object, so the browser still fetches from the CDN.
+ */
+export function symbolUrl(digest: string): string {
+	return `${PUBLIC_API_URL}/symbols/${digest}`;
+}
+
+/** Store Symbol bytes and get back the digest that identifies them. */
+export async function uploadSymbol(
+	file: Blob,
+	accessToken: string
+): Promise<{ digest: string; url: string }> {
+	return apiFetch<{ digest: string; url: string }>('/symbols', {
+		method: 'POST',
+		accessToken,
+		headers: { 'Content-Type': file.type || 'application/octet-stream' },
+		body: file
+	});
+}

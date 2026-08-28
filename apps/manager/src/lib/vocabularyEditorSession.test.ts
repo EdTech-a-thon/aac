@@ -110,3 +110,72 @@ describe('vocabularyEditorSession', () => {
 		expect(pendingBoardButtonMutations(session)).toEqual([]);
 	});
 });
+
+describe('vocabularyEditorSession Symbols', () => {
+	const DIGEST = 'f'.repeat(64);
+
+	const button = {
+		id: 'btn-1',
+		board_id: 'board-1',
+		row_index: 0,
+		col_index: 0,
+		label: 'drink',
+		background_color: null,
+		palette_color_id: null,
+		action: null,
+		symbol_digest: null,
+		created_at: '2026-01-01T00:00:00.000Z',
+		updated_at: '2026-01-01T00:00:00.000Z'
+	};
+
+	beforeEach(() => {
+		__resetVocabularyEditorSessionsForTests();
+	});
+
+	function hydrated() {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [button] });
+		return session;
+	}
+
+	it('stages setting a Symbol as a pending mutation', () => {
+		const session = hydrated();
+		session.buttonsByBoardId['board-1'] = [{ ...button, symbol_digest: DIGEST }];
+		expect(pendingBoardButtonMutations(session)).toEqual([
+			expect.objectContaining({ op: 'update_button', id: 'btn-1', symbol_digest: DIGEST })
+		]);
+	});
+
+	it('stages clearing a Symbol', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], {
+			'board-1': [{ ...button, symbol_digest: DIGEST }]
+		});
+		session.buttonsByBoardId['board-1'] = [{ ...button, symbol_digest: null }];
+		expect(pendingBoardButtonMutations(session)).toEqual([
+			expect.objectContaining({ op: 'update_button', id: 'btn-1', symbol_digest: null })
+		]);
+	});
+
+	it('has no pending mutation when the Symbol is unchanged', () => {
+		const session = hydrated();
+		expect(pendingBoardButtonMutations(session)).toEqual([]);
+	});
+
+	it('reverts a staged Symbol when changes are discarded', () => {
+		const session = hydrated();
+		session.buttonsByBoardId['board-1'] = [{ ...button, symbol_digest: DIGEST }];
+		discardEditorChanges(session);
+		expect(session.buttonsByBoardId['board-1'][0].symbol_digest).toBeNull();
+		expect(pendingBoardButtonMutations(session)).toEqual([]);
+	});
+
+	it('keeps a staged Symbol across a rebase onto new live server state', () => {
+		const session = hydrated();
+		session.buttonsByBoardId['board-1'] = [{ ...button, symbol_digest: DIGEST }];
+		rebaseEditorOntoLiveFromServer(session, [board], { 'board-1': [button] });
+		expect(pendingBoardButtonMutations(session)).toEqual([
+			expect.objectContaining({ op: 'update_button', id: 'btn-1', symbol_digest: DIGEST })
+		]);
+	});
+});

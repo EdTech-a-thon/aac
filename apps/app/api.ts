@@ -105,3 +105,14 @@ export async function apiFetch<T>(
 
   return data as T;
 }
+
+/**
+ * A Symbol's bytes, addressed by digest. The API redirects to the public
+ * object; the digest is the read capability, and bytes behind it never change,
+ * so the result is safe to cache indefinitely.
+ */
+export function symbolUrl(digest: string): string | null {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!apiUrl) return null;
+  return `${apiUrl}/symbols/${digest}`;
+}

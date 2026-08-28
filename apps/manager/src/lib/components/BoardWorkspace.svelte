@@ -1,17 +1,20 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import ButtonActionEditor from '$lib/components/ButtonActionEditor.svelte';
+	import ButtonFace from '$lib/components/ButtonFace.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { apiFetch, type AuthState } from '$lib/auth';
+	import { apiFetch, symbolUrl, uploadSymbol, type AuthState } from '$lib/auth';
 	import { cellRef, columnLetter, rowNumber } from '$lib/boardCellRef';
 	import { actionsEqual, type ButtonAction } from '$lib/buttonAction';
+	import { resolveButtonHex as resolveFaceHex } from '$lib/buttonFace';
 	import { normalizeSuggestedChangeSets } from '$lib/describeChangeSetMutations';
 	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
 		normalizeHexColor
 	} from '$lib/fitzgeraldColors';
+	import { prepareSymbolFile } from '$lib/symbolUploadBrowser';
 	import { wouldCreateSnippetInclusionCycle } from '$lib/snippetInclusionCycle';
 	import {
 		isSnippet,
@@ -70,12 +73,14 @@
 		return session.paletteColors;
 	});
 
+	const paletteHexById = $derived.by(() => {
+		const map: Record<string, string> = {};
+		for (const color of paletteColors) map[color.id] = color.hex;
+		return map;
+	});
+
 	function resolveButtonHex(button: BoardButton): string {
-		if (button.palette_color_id) {
-			const color = paletteColors.find((c) => c.id === button.palette_color_id);
-			if (color) return color.hex;
-		}
-		return button.background_color ?? DEFAULT_BUTTON_COLOR;
+		return resolveFaceHex(button, paletteHexById);
 	}
 
 	type CanvasSelection =
@@ -137,6 +142,8 @@
 	let widthDraft = $state(4);
 	let heightDraft = $state(4);
 	let propsError = $state<string | null>(null);
+	let symbolBusy = $state(false);
+	let symbolInput = $state<HTMLInputElement | null>(null);
 	let boardSizeError = $state<string | null>(null);
 
 	type ItemDrag = {
@@ -980,7 +987,12 @@
 		);
 	}
 
-	function createButtonAt(row: number, col: number, event?: MouseEvent) {
+	function createButtonAt(
+		row: number,
+		col: number,
+		event?: MouseEvent,
+		symbolDigest: string | null = null
+	) {
 		event?.stopPropagation();
 		if (!selectedBoard || !selectedBoardId || didPan || didDrag || drag?.active) return;
 		const id = crypto.randomUUID();
@@ -991,6 +1003,7 @@
 			row_index: row,
 			col_index: col,
 			label: '',
+			symbol_digest: symbolDigest,
 			background_color: null,
 			palette_color_id: null,
 			action: null,
@@ -1145,6 +1158,105 @@
 		);
 	}
 
+	/**
+	 * Store the bytes and return the digest naming them, or null if the image was
+	 * refused — in which case nothing is changed, so a failure never half-applies.
+	 */
+	async function storeSymbol(file: File | Blob): Promise<string | null> {
+		propsError = null;
+		error = null;
+		symbolBusy = true;
+		try {
+			const bytes = await prepareSymbolFile(file);
+			const { digest } = await uploadSymbol(bytes, auth.session.access_token);
+			return digest;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : 'Could not add that Symbol';
+			propsError = message;
+			// Drops can target an unselected Button or an empty cell, where the
+			// inspector's message is not on screen — surface it in the canvas banner.
+			error = message;
+			return null;
+		} finally {
+			symbolBusy = false;
+		}
+	}
+
+	function setButtonSymbol(buttonId: string, digest: string | null) {
+		const target = buttons.find((b) => b.id === buttonId);
+		if (!target || target.symbol_digest === digest) return;
+		const now = new Date().toISOString();
+		setCurrentBoardButtons(
+			buttons.map((b) => (b.id === buttonId ? { ...b, symbol_digest: digest, updated_at: now } : b))
+		);
+	}
+
+	function setSelectedSymbol(digest: string | null) {
+		if (selectedButton) setButtonSymbol(selectedButton.id, digest);
+	}
+
+	async function attachSymbolFile(file: File | Blob) {
+		const button = selectedButton;
+		if (!button) return;
+		const digest = await storeSymbol(file);
+		if (digest) setButtonSymbol(button.id, digest);
+	}
+
+	function onSymbolInputChange(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (file) void attachSymbolFile(file);
+		input.value = '';
+	}
+
+	function symbolFileFromTransfer(items: FileList | null | undefined): File | null {
+		for (const file of Array.from(items ?? [])) {
+			if (file.type.startsWith('image/')) return file;
+		}
+		return null;
+	}
+
+	function allowSymbolDrop(event: DragEvent) {
+		if (!event.dataTransfer) return;
+		// Only claim the drop for real files; internal Button drags use pointer events.
+		if (Array.from(event.dataTransfer.types).includes('Files')) {
+			event.preventDefault();
+			event.dataTransfer.dropEffect = 'copy';
+		}
+	}
+
+	async function onButtonSymbolDrop(buttonId: string, event: DragEvent) {
+		const file = symbolFileFromTransfer(event.dataTransfer?.files);
+		if (!file) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const digest = await storeSymbol(file);
+		if (digest) setButtonSymbol(buttonId, digest);
+	}
+
+	async function onEmptyCellSymbolDrop(row: number, col: number, event: DragEvent) {
+		const file = symbolFileFromTransfer(event.dataTransfer?.files);
+		if (!file) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const digest = await storeSymbol(file);
+		if (digest) createButtonAt(row, col, undefined, digest);
+	}
+
+	/** Copy an image in a browser, paste it onto the selected Button. */
+	function onWindowPaste(event: ClipboardEvent) {
+		if (!selectedButton) return;
+		// Not while the Manager is typing — a paste into the label field is a paste
+		// into the label field.
+		const target = event.target as HTMLElement | null;
+		const tag = target?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+		const file = symbolFileFromTransfer(event.clipboardData?.files);
+		if (!file) return;
+		event.preventDefault();
+		void attachSymbolFile(file);
+	}
+
 	function selectNoneColor() {
 		const button = selectedButton;
 		if (!button) return;
@@ -1285,6 +1397,8 @@
 		canvasEl?.setPointerCapture(event.pointerId);
 	}
 </script>
+
+<svelte:window onpaste={onWindowPaste} />
 
 <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 	<div>
@@ -1525,6 +1639,8 @@
 										: 'hover:bg-slate-300 active:bg-slate-400'}"
 									style={`left: ${cellLeft(cell.col)}px; top: ${cellTop(cell.row)}px; width: ${CELL}px; height: ${CELL}px;`}
 									aria-label={`Empty cell ${cellRef(cell.row, cell.col)}`}
+									ondragover={allowSymbolDrop}
+									ondrop={(event) => onEmptyCellSymbolDrop(cell.row, cell.col, event)}
 									disabled={Boolean(occupying && !isDragOrigin) ||
 										Boolean(drag?.active)}
 									onclick={(event) => {
@@ -1595,10 +1711,15 @@
 									>
 										{#each innerButtons as mapped (`${mapped.button.id}:${mapped.hostRow}:${mapped.hostCol}`)}
 											<div
-												class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-lg border border-slate-300/80 px-2 text-center text-sm font-medium opacity-40"
+												class="pointer-events-none absolute overflow-hidden rounded-lg border border-slate-300/80 opacity-40"
 												style={`left: ${cellLeft(mapped.hostCol) - cellLeft(inc.origin_col)}px; top: ${cellTop(mapped.hostRow) - cellTop(inc.origin_row)}px; width: ${CELL}px; height: ${CELL}px; background-color: ${resolveButtonHex(mapped.button)}; color: ${contrastingTextColor(resolveButtonHex(mapped.button))};`}
 											>
-												<span class="line-clamp-3 break-words">{mapped.button.label}</span>
+												<ButtonFace
+													label={mapped.button.label}
+													symbolSrc={mapped.button.symbol_digest
+														? symbolUrl(mapped.button.symbol_digest)
+														: null}
+												/>
 											</div>
 										{/each}
 									</div>
@@ -1640,7 +1761,7 @@
 									: cellTop(button.row_index)}
 								<button
 									type="button"
-									class="absolute z-[1000] flex items-center justify-center overflow-hidden rounded-lg border px-2 text-center text-sm font-medium {isDragging
+									class="absolute z-[1000] overflow-hidden rounded-lg border {isDragging
 										? 'z-[1010] cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
 										: isSelected('button', button.id)
 											? 'z-[1001] cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
@@ -1654,10 +1775,13 @@
 									onpointerup={onItemPointerUp}
 									onpointercancel={onItemPointerUp}
 									onclick={(event) => selectButton(button, event)}
+									ondragover={allowSymbolDrop}
+									ondrop={(event) => onButtonSymbolDrop(button.id, event)}
 								>
-									<span class="line-clamp-3 break-words pointer-events-none">
-										{button.label}
-									</span>
+									<ButtonFace
+										label={button.label}
+										symbolSrc={button.symbol_digest ? symbolUrl(button.symbol_digest) : null}
+									/>
 								</button>
 							{/each}
 							</div>
@@ -1711,6 +1835,56 @@
 								oninput={() => updateSelectedLabel()}
 							/>
 						</label>
+
+						<div class="space-y-2">
+							<span class="text-xs font-medium tracking-wide text-slate-500 uppercase">
+								Symbol
+							</span>
+							<div class="flex items-center gap-3">
+								<div
+									class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-white"
+								>
+									{#if selectedButton.symbol_digest}
+										<img
+											src={symbolUrl(selectedButton.symbol_digest)}
+											alt=""
+											class="h-full w-full object-contain"
+										/>
+									{:else}
+										<span class="text-[10px] text-slate-400">None</span>
+									{/if}
+								</div>
+								<div class="flex flex-1 flex-col gap-1.5">
+									<button
+										type="button"
+										class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:border-slate-400 disabled:opacity-50"
+										disabled={symbolBusy}
+										onclick={() => symbolInput?.click()}
+									>
+										{symbolBusy
+											? 'Adding…'
+											: selectedButton.symbol_digest
+												? 'Replace Symbol'
+												: 'Add Symbol'}
+									</button>
+									<button
+										type="button"
+										class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:border-slate-400 disabled:opacity-40"
+										disabled={symbolBusy || !selectedButton.symbol_digest}
+										onclick={() => setSelectedSymbol(null)}
+									>
+										None
+									</button>
+								</div>
+							</div>
+							<input
+								bind:this={symbolInput}
+								type="file"
+								accept="image/png,image/jpeg,image/webp,image/gif"
+								class="hidden"
+								onchange={onSymbolInputChange}
+							/>
+						</div>
 
 						<div class="space-y-2">
 							<span class="text-xs font-medium tracking-wide text-slate-500 uppercase"

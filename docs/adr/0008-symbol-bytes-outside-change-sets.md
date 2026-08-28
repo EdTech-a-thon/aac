@@ -1,0 +1,7 @@
+# Symbol bytes are uploaded outside Change Sets
+
+Change Sets are JSON mutation arrays and are the only durable way Vocabulary data changes, but image bytes cannot travel inside that array, and a Suggested Change Set has to render its images while still unapplied. So a Symbol's bytes are uploaded immediately and out of band into a public Supabase Storage bucket keyed by a digest of the bytes, written only through the API with the service role; Change Sets carry just that digest on `create_button` / `update_button`. The durability invariant survives untouched because Symbols are not Vocabulary data — they are immutable, unowned content that Buttons point at.
+
+A Vocabulary-scoped `Symbol` entity alongside `palette_colors` was rejected: Palette Colors need binding because editing one propagates to every bound Button, whereas a Symbol is never edited in place, only replaced. Within a Vocabulary an image recurs mainly because a strip of Buttons recurs, which Snippets already solve; the reuse that matters is *across* Vocabularies, where a per-Vocabulary library would have forced duplication to copy every blob.
+
+Consequences: uploads are idempotent (same bytes, same digest); duplicating a Board or Vocabulary copies references, never bytes; the digest is the read capability, so anyone holding it can fetch the image, in the manner of an unlisted YouTube video; and bytes are never garbage-collected, since a digest may still be referenced by an Applied Change Set in the permanent history and deleting those bytes is the one unrecoverable failure in the design.

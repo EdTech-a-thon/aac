@@ -36,6 +36,7 @@ function button(partial: Partial<BoardButton> & Pick<BoardButton, 'id'>): BoardB
 		background_color: null,
 		palette_color_id: null,
 		action: null,
+		symbol_digest: null,
 		created_at: '2026-01-01T00:00:00.000Z',
 		updated_at: '2026-01-01T00:00:00.000Z',
 		...partial
@@ -962,5 +963,69 @@ describe('projectVocabulary', () => {
 				position: 0
 			})
 		]);
+	});
+});
+
+
+describe('projectVocabulary Symbol', () => {
+	const DIGEST = 'd'.repeat(64);
+
+	it('carries a Symbol onto a created Button', () => {
+		const projected = projectVocabulary(live({ boards: [board({ id: 'board-1' })] }), [
+			{
+				op: 'create_button',
+				id: 'btn-new',
+				board_id: 'board-1',
+				row_index: 0,
+				col_index: 0,
+				label: 'drink',
+				symbol_digest: DIGEST
+			}
+		]);
+		expect(projected.buttons[0].symbol_digest).toBe(DIGEST);
+	});
+
+	it('leaves a created Button without a Symbol when none is given', () => {
+		const projected = projectVocabulary(live({ boards: [board({ id: 'board-1' })] }), [
+			{
+				op: 'create_button',
+				id: 'btn-new',
+				board_id: 'board-1',
+				row_index: 0,
+				col_index: 0,
+				label: 'drink'
+			}
+		]);
+		expect(projected.buttons[0].symbol_digest).toBeNull();
+	});
+
+	it('sets a Symbol on an existing Button', () => {
+		const projected = projectVocabulary(
+			live({ boards: [board({ id: 'board-1' })], buttons: [button({ id: 'btn-1' })] }),
+			[{ op: 'update_button', id: 'btn-1', symbol_digest: DIGEST }]
+		);
+		expect(projected.buttons[0].symbol_digest).toBe(DIGEST);
+	});
+
+	it('clears a Symbol', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [board({ id: 'board-1' })],
+				buttons: [button({ id: 'btn-1', symbol_digest: DIGEST })]
+			}),
+			[{ op: 'update_button', id: 'btn-1', symbol_digest: null }]
+		);
+		expect(projected.buttons[0].symbol_digest).toBeNull();
+	});
+
+	it('leaves the Symbol alone when the mutation does not mention it', () => {
+		const projected = projectVocabulary(
+			live({
+				boards: [board({ id: 'board-1' })],
+				buttons: [button({ id: 'btn-1', symbol_digest: DIGEST })]
+			}),
+			[{ op: 'update_button', id: 'btn-1', label: 'food' }]
+		);
+		expect(projected.buttons[0].symbol_digest).toBe(DIGEST);
 	});
 });

@@ -16,6 +16,7 @@ export type PreviewButton = {
 	col_index: number;
 	background_color: string | null;
 	palette_color_id: string | null;
+	symbol_digest: string | null;
 };
 
 export type PreviewOverlay =
@@ -84,6 +85,7 @@ export type RichLookupContext = MutationLookupContext & {
 		MutationLookupContext['buttons'][number] & {
 			background_color?: string | null;
 			palette_color_id?: string | null;
+			symbol_digest?: string | null;
 		}
 	>;
 };
@@ -250,7 +252,8 @@ function toPreviewButton(
 		row_index: button.row_index,
 		col_index: button.col_index,
 		background_color: button.background_color ?? null,
-		palette_color_id: button.palette_color_id ?? null
+		palette_color_id: button.palette_color_id ?? null,
+		symbol_digest: button.symbol_digest ?? null
 	};
 }
 
@@ -277,6 +280,7 @@ function liveFromLookup(ctx: RichLookupContext): ProjectedVocabulary {
 			background_color: b.background_color ?? null,
 			palette_color_id: b.palette_color_id ?? null,
 			action: null,
+			symbol_digest: b.symbol_digest ?? null,
 			created_at: '',
 			updated_at: ''
 		})),

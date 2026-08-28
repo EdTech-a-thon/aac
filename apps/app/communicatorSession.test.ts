@@ -77,6 +77,7 @@ function button(partial: {
   palette_color_id?: string | null;
   background_color?: string | null;
   action?: LiveSnapshot["boards"][0]["buttons"][0]["action"];
+  symbol_digest?: string | null;
 }): LiveSnapshot["boards"][0]["buttons"][0] {
   return {
     id: partial.id,
@@ -87,6 +88,7 @@ function button(partial: {
     background_color: partial.background_color ?? null,
     palette_color_id: partial.palette_color_id ?? null,
     action: partial.action ?? null,
+    symbol_digest: partial.symbol_digest ?? null,
     created_at: partial.created_at ?? "2026-01-01T00:00:00Z",
     updated_at: partial.created_at ?? "2026-01-01T00:00:00Z",
   };
@@ -1366,5 +1368,91 @@ describe("Communicator session", () => {
     expect(cells[0]?.[0]?.backgroundHex).toBe("#ffffff");
     expect(cells[0]?.[1]?.backgroundHex).toBe("#ffb74d");
     expect(cells[1]?.[0]?.backgroundHex).toBe("#123456");
+  });
+});
+
+describe("Communicator session Symbols", () => {
+  const DIGEST = "e".repeat(64);
+
+  it("exposes a Button's Symbol on its visible cell", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "b-home",
+            buttons: [
+              button({
+                id: "btn-1",
+                board_id: "b-home",
+                row_index: 0,
+                col_index: 0,
+                label: "drink",
+                symbol_digest: DIGEST,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0][0]?.button.symbol_digest).toBe(DIGEST);
+  });
+
+  it("leaves a Button without a Symbol as null", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({
+            id: "b-home",
+            buttons: [
+              button({ id: "btn-1", board_id: "b-home", row_index: 0, col_index: 0 }),
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[0][0]?.button.symbol_digest).toBeNull();
+  });
+
+  it("carries a Symbol through a Snippet Inclusion", () => {
+    const session = createCommunicatorSession(speechSpy());
+    session.open(
+      snapshot({
+        boards: [
+          board({ id: "b-home", width: 2, height: 2, buttons: [] }),
+          {
+            ...board({
+              id: "snip-1",
+              width: 1,
+              height: 1,
+              buttons: [
+                button({
+                  id: "btn-snip",
+                  board_id: "snip-1",
+                  row_index: 0,
+                  col_index: 0,
+                  label: "yes",
+                  symbol_digest: DIGEST,
+                }),
+              ],
+            }),
+            kind: "snippet",
+          },
+        ],
+        snippetInclusions: [
+          {
+            id: "inc-1",
+            host_id: "b-home",
+            snippet_id: "snip-1",
+            origin_row: 1,
+            origin_col: 1,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    expect(session.getState().visibleCells[1][1]?.button.symbol_digest).toBe(DIGEST);
   });
 });

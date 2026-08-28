@@ -68,7 +68,8 @@ function toButtonSnapshot(button: BoardButton): ButtonSnapshot {
 		label: button.label,
 		background_color: button.background_color,
 		palette_color_id: button.palette_color_id,
-		action: button.action ?? null
+		action: button.action ?? null,
+		symbol_digest: button.symbol_digest ?? null
 	};
 }
 
