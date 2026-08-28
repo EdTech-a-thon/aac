@@ -16,6 +16,11 @@
 	let nameDraft = $state('');
 	let managers = $state<Manager[]>([]);
 	let communicators = $state<Communicator[]>([]);
+
+	// Management entails Usage, so removing a Manager's Usage relationship
+	// would not take their access away. Don't offer a control that does
+	// nothing — say where the access comes from instead. See ADR 0012.
+	const managerIds = $derived(new Set(managers.map((manager) => manager.userId)));
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let savingName = $state(false);
@@ -370,13 +375,17 @@
 								<p class="truncate text-sm text-slate-500">{communicator.email}</p>
 							{/if}
 						</div>
-						<button
-							type="button"
-							class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-							onclick={() => removeCommunicator(communicator.userId)}
-						>
-							Remove
-						</button>
+						{#if managerIds.has(communicator.userId)}
+							<span class="shrink-0 text-sm text-slate-500">Access through managing</span>
+						{:else}
+							<button
+								type="button"
+								class="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+								onclick={() => removeCommunicator(communicator.userId)}
+							>
+								Remove
+							</button>
+						{/if}
 					</li>
 				{:else}
 					<li class="px-3 py-2.5 text-sm text-slate-500">No communicators yet.</li>

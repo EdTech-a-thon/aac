@@ -485,18 +485,19 @@ describe("Communicator Usage list and live snapshot", () => {
     ]);
   });
 
-  it("denies the live snapshot without Usage, including Management-only", async () => {
+  it("allows the live snapshot to a Manager holding no Usage, and denies everyone else", async () => {
     const app = testApp();
     const manager = await createTestUser();
     const outsider = await createTestUser();
     const vocabulary = await createManagedVocabulary(app, manager.accessToken);
 
+    // Management entails Usage, so managing is enough on its own. See ADR 0012.
     const asManager = await apiJson<{ error?: string }>(
       app,
       `/vocabularies/${vocabulary.id}/live`,
       { accessToken: manager.accessToken },
     );
-    expect(asManager.status).toBeGreaterThanOrEqual(400);
+    expect(asManager.status).toBe(200);
 
     const asOutsider = await apiJson<{ error?: string }>(
       app,

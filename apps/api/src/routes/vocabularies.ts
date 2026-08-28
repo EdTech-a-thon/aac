@@ -132,10 +132,17 @@ async function requireVocabularyCommunicator(
   if (error) {
     return { ok: false as const, error: pgErrorMessage(error) };
   }
-  if (!data) {
-    return { ok: false as const, error: "Not a communicator of this vocabulary" };
+  if (data) {
+    return { ok: true as const };
   }
-  return { ok: true as const };
+
+  // Management entails Usage: a Manager may communicate without holding a
+  // Usage relationship. See ADR 0012.
+  const managed = await requireVocabularyManager(supabase, userId, vocabularyId);
+  if (managed.ok) {
+    return { ok: true as const };
+  }
+  return { ok: false as const, error: "Not a communicator of this vocabulary" };
 }
 
 async function loadVocabularyCopySnapshot(
@@ -243,23 +250,19 @@ vocabularyRoutes.get("/", async (c) => {
 
 vocabularyRoutes.get("/using", async (c) => {
   const supabase = c.get("supabase");
-  const userId = c.get("user").id;
+  // Every Vocabulary this User may read is one they use or one they manage,
+  // and Management entails Usage — so the rows RLS admits are exactly the
+  // ones they can communicate with. See ADR 0012.
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at, vocabulary_users!inner(user_id)")
-    .eq("vocabulary_users.user_id", userId);
+    .select("id, name, created_at, updated_at");
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
   }
 
   const vocabularies = (data ?? [])
-    .map((row) => {
-      const { vocabulary_users: _, ...vocabulary } = row as Vocabulary & {
-        vocabulary_users: unknown;
-      };
-      return withDisplayName(vocabulary);
-    })
+    .map((row) => withDisplayName(row as Vocabulary))
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   return c.json({ vocabularies });
