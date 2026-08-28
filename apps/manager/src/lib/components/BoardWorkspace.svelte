@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import ButtonActionEditor from '$lib/components/ButtonActionEditor.svelte';
 	import ButtonFace from '$lib/components/ButtonFace.svelte';
@@ -22,13 +23,18 @@
 		type Board,
 		type BoardButton,
 		type GridKind,
-		type SnippetInclusion
+		type PaletteColor,
+		type SnippetInclusion,
+		type UnresolvedCopyAction,
+		type Vocabulary
 	} from '$lib/types';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
 		replaceEditorLiveFromServer,
+		rebaseEditorOntoLiveFromServer,
 		subscribeEditorRevision,
+		visibleVocabularySnapshot,
 		type SuggestedChangeSet
 	} from '$lib/vocabularyEditorSession';
 
@@ -123,6 +129,32 @@
 
 	let deleteOpen = $state(false);
 	let deleteError = $state<string | null>(null);
+	let copyOpen = $state(false);
+	let copyName = $state('');
+	let copyDestinationId = $state('');
+	let copyVocabularies = $state<Vocabulary[]>([]);
+	let copyBusy = $state(false);
+	let copyError = $state<string | null>(null);
+	let unresolvedCopyActions = $state<UnresolvedCopyAction[]>([]);
+
+	// A warning ends only when the Button is repaired — given an Action or
+	// deleted. The database drops the row once that Change Set applies; this
+	// keeps the canvas honest while the repair is still staged.
+	const unresolvedByButtonId = $derived.by(() => {
+		const staged = new Map(
+			Object.values(buttonsByBoardId)
+				.flat()
+				.map((button) => [button.id, button])
+		);
+		return new Map(
+			unresolvedCopyActions
+				.filter((warning) => {
+					const button = staged.get(warning.button_id);
+					return button != null && button.action == null;
+				})
+				.map((warning) => [warning.button_id, warning])
+		);
+	});
 
 	let canvasEl = $state<HTMLDivElement | null>(null);
 	let canvasWidth = $state(0);
@@ -202,6 +234,10 @@
 		if (current?.kind !== 'button') return null;
 		return buttons.find((button) => button.id === current.id) ?? null;
 	});
+
+	const selectedButtonWarning = $derived(
+		selectedButton ? (unresolvedByButtonId.get(selectedButton.id) ?? null) : null
+	);
 
 	const hostInclusions = $derived.by(() => {
 		if (!selectedBoardId) return [] as SnippetInclusion[];
@@ -490,7 +526,7 @@
 			loadingBoards = true;
 			loadingButtons = true;
 			try {
-				const [data, paletteData, inclusionData] = await Promise.all([
+				const [data, paletteData, inclusionData, warningData] = await Promise.all([
 					apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
 						accessToken: token
 					}),
@@ -500,6 +536,10 @@
 					),
 					apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
 						`/vocabularies/${id}/snippet-inclusions`,
+						{ accessToken: token }
+					),
+					apiFetch<{ unresolvedCopyActions: UnresolvedCopyAction[] }>(
+						`/vocabularies/${id}/unresolved-copy-actions`,
 						{ accessToken: token }
 					)
 				]);
@@ -526,6 +566,7 @@
 					paletteData.paletteColors,
 					inclusionData.snippetInclusions
 				);
+				unresolvedCopyActions = warningData.unresolvedCopyActions;
 				await refreshSuggested();
 			} catch (err) {
 				if (cancelled) return;
@@ -747,6 +788,85 @@
 	function openDelete() {
 		deleteError = null;
 		deleteOpen = true;
+	}
+
+	async function openCopy() {
+		if (!selectedBoard || isSnippet(selectedBoard)) return;
+		copyName = `Copy of ${selectedBoard.displayName}`;
+		copyDestinationId = vocabularyId;
+		copyError = null;
+		copyOpen = true;
+		try {
+			const data = await apiFetch<{ vocabularies: Vocabulary[] }>(
+				'/vocabularies',
+				{ accessToken: auth.session.access_token }
+			);
+			copyVocabularies = data.vocabularies;
+		} catch (err) {
+			copyError = err instanceof Error ? err.message : 'Failed to load destinations';
+		}
+	}
+
+	// A Board Copy applies straight away, so the destination's editor has to take
+	// the new live state on board while keeping any staged edits staged.
+	async function reloadAndRebase(id: string, copiedBoardId: string) {
+		const accessToken = auth.session.access_token;
+		const [boardData, paletteData, inclusionData] = await Promise.all([
+			apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, { accessToken }),
+			apiFetch<{ paletteColors: PaletteColor[] }>(`/vocabularies/${id}/palette-colors`, {
+				accessToken
+			}),
+			apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
+				`/vocabularies/${id}/snippet-inclusions`,
+				{ accessToken }
+			)
+		]);
+		const nextButtons: Record<string, BoardButton[]> = {};
+		await Promise.all(
+			boardData.boards.map(async (board) => {
+				const data = await apiFetch<{ buttons: BoardButton[] }>(
+					`/vocabularies/${id}/boards/${board.id}/buttons`,
+					{ accessToken }
+				);
+				nextButtons[board.id] = data.buttons;
+			})
+		);
+		const destinationSession = getVocabularyEditorSession(id);
+		rebaseEditorOntoLiveFromServer(
+			destinationSession,
+			boardData.boards.map(withGridKind),
+			nextButtons,
+			paletteData.paletteColors,
+			inclusionData.snippetInclusions
+		);
+		persistEditorSession(destinationSession, { selectedBoardId: copiedBoardId });
+	}
+
+	async function copyBoard(event: SubmitEvent) {
+		event.preventDefault();
+		if (!selectedBoard || isSnippet(selectedBoard) || copyBusy) return;
+		copyBusy = true;
+		copyError = null;
+		try {
+			const data = await apiFetch<{ boardId: string }>(`/vocabularies/${vocabularyId}/boards/${selectedBoard.id}/copy`, {
+				method: 'POST',
+				accessToken: auth.session.access_token,
+				// The copy is taken from what this Manager can see, staged edits
+				// included — while those edits stay staged on the source.
+				body: JSON.stringify({
+					destinationVocabularyId: copyDestinationId,
+					name: copyName,
+					snapshot: visibleVocabularySnapshot(session)
+				})
+			});
+			await reloadAndRebase(copyDestinationId, data.boardId);
+			copyOpen = false;
+			if (copyDestinationId !== vocabularyId) await goto(`/vocabularies/${copyDestinationId}`);
+		} catch (err) {
+			copyError = err instanceof Error ? err.message : 'Failed to copy Board';
+		} finally {
+			copyBusy = false;
+		}
 	}
 
 	function deleteBoard() {
@@ -1521,6 +1641,13 @@
 					</button>
 				{/snippet}
 				{#snippet children({ close })}
+					{#if !isSnippet(selectedBoard)}
+						<button
+							type="button"
+							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+							onclick={() => { close(); openCopy(); }}
+						>Copy board</button>
+					{/if}
 					<button
 						type="button"
 						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
@@ -1762,7 +1889,11 @@
 									: cellTop(button.row_index)}
 								<button
 									type="button"
-									class="absolute z-[1000] overflow-hidden rounded-lg border {isDragging
+									class="absolute z-[1000] overflow-hidden rounded-lg border {unresolvedByButtonId.has(
+										button.id
+									)
+										? 'border-amber-600 ring-4 ring-amber-400/80'
+										: ''} {isDragging
 										? 'z-[1010] cursor-grabbing border-blue-500 shadow-lg ring-2 ring-blue-500/40'
 										: isSelected('button', button.id)
 											? 'z-[1001] cursor-grab border-blue-500 shadow-sm ring-2 ring-blue-500/40 transition'
@@ -1783,6 +1914,12 @@
 										label={button.label}
 										symbolSrc={button.symbol_digest ? symbolUrl(button.symbol_digest) : null}
 									/>
+									{#if unresolvedByButtonId.has(button.id)}
+										<span
+											class="absolute top-1 right-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-black"
+											aria-label="Action needs attention"
+										>!</span>
+									{/if}
 								</button>
 							{/each}
 							</div>
@@ -1825,6 +1962,14 @@
 
 				{#if selectedButton}
 					<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+						{#if selectedButtonWarning}
+							<p class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+								Action needs attention. This Button opened
+								“{selectedButtonWarning.previous_board_name.trim() || 'Untitled'}”, which was not
+								copied into this vocabulary, so its action was cleared. Give it an action or delete
+								it.
+							</p>
+						{/if}
 						<label class="block space-y-1.5">
 							<span class="text-xs font-medium tracking-wide text-slate-500 uppercase">
 								Label
@@ -2159,6 +2304,31 @@
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
 		>
 			Create
+		</button>
+	{/snippet}
+</Modal>
+
+<Modal bind:open={copyOpen} title="Copy board">
+	<form class="space-y-4" id="copy-board-form" onsubmit={copyBoard}>
+		<p class="text-sm text-slate-600">The copy is Applied immediately. Your pending edits remain unapplied.</p>
+		<label class="block space-y-1.5">
+			<span class="text-sm font-medium text-slate-700">Name</span>
+			<input class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" bind:value={copyName} />
+		</label>
+		<label class="block space-y-1.5">
+			<span class="text-sm font-medium text-slate-700">Destination Vocabulary</span>
+			<select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" bind:value={copyDestinationId}>
+				{#each copyVocabularies as vocabulary (vocabulary.id)}
+					<option value={vocabulary.id}>{vocabulary.displayName}</option>
+				{/each}
+			</select>
+		</label>
+		{#if copyError}<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{copyError}</p>{/if}
+	</form>
+	{#snippet footer()}
+		<button type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onclick={() => (copyOpen = false)}>Cancel</button>
+		<button type="submit" form="copy-board-form" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={copyBusy || !copyDestinationId}>
+			{copyBusy ? 'Copying…' : 'Copy and apply'}
 		</button>
 	{/snippet}
 </Modal>

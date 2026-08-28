@@ -351,3 +351,22 @@ export function pendingEditorMutations(session: VocabularyEditorSession): Change
 export function isEditorDirty(session: VocabularyEditorSession) {
 	return pendingEditorMutations(session).length > 0;
 }
+
+/**
+ * The Vocabulary as the Manager can currently see it — live state with any
+ * staged edits already folded in. This is what a duplicate or a Board Copy is
+ * taken from, per CONTEXT.md: the source's visible state at the moment of
+ * copying, while those staged edits stay unapplied on the source.
+ */
+export function visibleVocabularySnapshot(session: VocabularyEditorSession) {
+	return {
+		boards: session.boards.map(toBoardSnapshotWithCreation),
+		buttons: allButtonsFromMap(session.buttonsByBoardId),
+		palette_colors: session.paletteColors,
+		snippet_inclusions: session.snippetInclusions
+	};
+}
+
+function toBoardSnapshotWithCreation(board: Board) {
+	return { ...toBoardSnapshot(board), created_at: board.created_at };
+}

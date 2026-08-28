@@ -52,6 +52,14 @@ export type SnippetInclusion = {
 	updated_at: string;
 };
 
+export type UnresolvedCopyAction = {
+	id: string;
+	vocabulary_id: string;
+	button_id: string;
+	previous_board_name: string;
+	created_at: string;
+};
+
 export type PaletteColor = {
 	id: string;
 	vocabulary_id: string;

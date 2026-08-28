@@ -6,7 +6,8 @@ import {
 	getVocabularyEditorSession,
 	pendingBoardButtonMutations,
 	rebaseEditorOntoLiveFromServer,
-	replaceEditorLiveFromServer
+	replaceEditorLiveFromServer,
+	visibleVocabularySnapshot
 } from './vocabularyEditorSession';
 
 const board = {
@@ -177,5 +178,45 @@ describe('vocabularyEditorSession Symbols', () => {
 		expect(pendingBoardButtonMutations(session)).toEqual([
 			expect.objectContaining({ op: 'update_button', id: 'btn-1', symbol_digest: DIGEST })
 		]);
+	});
+
+	it('visibleVocabularySnapshot reports live state when nothing is staged', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		const button = {
+			id: 'button-1',
+			board_id: 'board-1',
+			row_index: 0,
+			col_index: 0,
+			label: 'hello',
+			background_color: null,
+			palette_color_id: null,
+			action: null,
+			symbol_digest: null,
+			created_at: '2026-01-01T00:00:00.000Z',
+			updated_at: '2026-01-01T00:00:00.000Z'
+		};
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [button] });
+
+		const snapshot = visibleVocabularySnapshot(session);
+		expect(snapshot.boards).toEqual([
+			expect.objectContaining({ id: 'board-1', name: 'Home', width: 2, height: 2 })
+		]);
+		expect(snapshot.buttons).toEqual([expect.objectContaining({ id: 'button-1', label: 'hello' })]);
+	});
+
+	it('visibleVocabularySnapshot folds in staged edits without applying them', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [] });
+
+		// Stage a rename and a brand new Board, the way the editor does.
+		session.boards = [
+			{ ...board, name: 'Renamed', displayName: 'Renamed' },
+			{ ...board2, id: 'board-staged', name: 'Staged', displayName: 'Staged' }
+		];
+
+		const snapshot = visibleVocabularySnapshot(session);
+		expect(snapshot.boards.map((entry) => entry.name)).toEqual(['Renamed', 'Staged']);
+		// The staged edits are still staged — the snapshot did not consume them.
+		expect(pendingBoardButtonMutations(session).length).toBeGreaterThan(0);
 	});
 });

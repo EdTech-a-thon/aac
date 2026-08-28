@@ -1,5 +1,10 @@
 import { Hono } from "hono";
 import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
+import {
+  prepareBoardCopy,
+  remapVocabularySnapshot,
+  type VocabularyCopySnapshot,
+} from "../copyVocabulary.ts";
 
 type Vocabulary = {
   id: string;
@@ -133,6 +138,56 @@ async function requireVocabularyCommunicator(
   return { ok: true as const };
 }
 
+async function loadVocabularyCopySnapshot(
+  supabase: AuthVariables["supabase"],
+  vocabularyId: string,
+): Promise<{ snapshot?: VocabularyCopySnapshot; error?: string }> {
+  const boardsResult = await supabase
+    .from("boards")
+    .select("id, name, width, height, kind, created_at")
+    .eq("vocabulary_id", vocabularyId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (boardsResult.error) return { error: pgErrorMessage(boardsResult.error) };
+  const boards = boardsResult.data ?? [];
+  const boardIds = boards.map((board) => board.id);
+  const [paletteResult, buttonsResult, inclusionsResult] = await Promise.all([
+    supabase
+      .from("palette_colors")
+      .select("id, hex, name, description, position")
+      .eq("vocabulary_id", vocabularyId)
+      .order("position", { ascending: true }),
+    boardIds.length
+      ? supabase
+          .from("buttons")
+          .select(
+            "id, board_id, row_index, col_index, label, background_color, palette_color_id, action, symbol_digest, created_at",
+          )
+          .in("board_id", boardIds)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+    boardIds.length
+      ? supabase
+          .from("snippet_inclusions")
+          .select("id, host_id, snippet_id, origin_row, origin_col, created_at")
+          .in("host_id", boardIds)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const firstError = paletteResult.error ?? buttonsResult.error ?? inclusionsResult.error;
+  if (firstError) return { error: pgErrorMessage(firstError) };
+  return {
+    snapshot: {
+      boards,
+      buttons: buttonsResult.data ?? [],
+      palette_colors: paletteResult.data ?? [],
+      snippet_inclusions: inclusionsResult.data ?? [],
+    } as VocabularyCopySnapshot,
+  };
+}
+
 type ChangeSet = {
   id: string;
   vocabulary_id: string;
@@ -229,6 +284,105 @@ vocabularyRoutes.post("/", async (c) => {
     },
     201,
   );
+});
+
+vocabularyRoutes.post("/:id/duplicate", async (c) => {
+  const supabase = c.get("supabase");
+  const sourceId = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, sourceId);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  const body = await c.req
+    .json<{ name?: string; snapshot?: VocabularyCopySnapshot }>()
+    .catch((): { name?: string; snapshot?: VocabularyCopySnapshot } => ({}));
+  const name = typeof body.name === "string" ? body.name : "";
+  let snapshot = body.snapshot;
+
+  if (!snapshot) {
+    const loaded = await loadVocabularyCopySnapshot(supabase, sourceId);
+    if (!loaded.snapshot) return c.json({ error: loaded.error ?? "Copy failed" }, 400);
+    snapshot = loaded.snapshot;
+  }
+
+  const copied = remapVocabularySnapshot(snapshot);
+  const { data, error } = await supabase.rpc("duplicate_vocabulary", {
+    p_source_vocabulary_id: sourceId,
+    p_name: name,
+    p_initial_snapshot: copied.initialSnapshot,
+    p_mutations: copied.mutations,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ vocabulary: withDisplayName(data as Vocabulary) }, 201);
+});
+
+vocabularyRoutes.post("/:id/boards/:boardId/copy", async (c) => {
+  const supabase = c.get("supabase");
+  const sourceId = c.req.param("id");
+  const boardId = c.req.param("boardId");
+  const body = await c.req
+    .json<{
+      destinationVocabularyId?: string;
+      name?: string;
+      snapshot?: VocabularyCopySnapshot;
+    }>()
+    .catch(
+      (): {
+        destinationVocabularyId?: string;
+        name?: string;
+        snapshot?: VocabularyCopySnapshot;
+      } => ({}),
+    );
+  const destinationId = body.destinationVocabularyId ?? sourceId;
+  const [sourceManaged, destinationManaged] = await Promise.all([
+    requireVocabularyManager(supabase, c.get("user").id, sourceId),
+    requireVocabularyManager(supabase, c.get("user").id, destinationId),
+  ]);
+  if (!sourceManaged.ok || !destinationManaged.ok) {
+    return c.json({ error: "Not a manager of source and destination Vocabularies" }, 404);
+  }
+  let snapshot = body.snapshot;
+  if (!snapshot) {
+    const loaded = await loadVocabularyCopySnapshot(supabase, sourceId);
+    if (!loaded.snapshot) return c.json({ error: loaded.error ?? "Copy failed" }, 400);
+    snapshot = loaded.snapshot;
+  }
+  const sourceBoard = snapshot.boards.find((board) => board.id === boardId);
+  const name = typeof body.name === "string"
+    ? body.name
+    : `Copy of ${displayName(sourceBoard?.name)}`;
+  let prepared;
+  try {
+    prepared = prepareBoardCopy(snapshot, sourceId, destinationId, boardId, name);
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Copy failed" }, 404);
+  }
+  const { data, error } = await supabase.rpc("submit_board_copy", {
+    p_source_vocabulary_id: sourceId,
+    p_destination_vocabulary_id: destinationId,
+    p_mutations: prepared.mutations,
+    p_warnings: prepared.warnings,
+    p_summary: `Copied Board “${displayName(sourceBoard?.name)}”`,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json(
+    { boardId: prepared.boardId, changeSet: data as ChangeSet, warnings: prepared.warnings },
+    201,
+  );
+});
+
+vocabularyRoutes.get("/:id/unresolved-copy-actions", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+  const { data, error } = await supabase
+    .from("unresolved_copy_actions")
+    .select("id, vocabulary_id, button_id, previous_board_name, created_at")
+    .eq("vocabulary_id", id)
+    .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ unresolvedCopyActions: data ?? [] });
 });
 
 vocabularyRoutes.get("/:id", async (c) => {

@@ -9,7 +9,7 @@ A person with an Auth account (email/password). Not split into separate account 
 _Avoid_: Manager account, AAC User account, role-as-account-type
 
 **Vocabulary**:
-A curated collection of Boards and Snippets that Users can manage and/or use, via separate relationships. It appears in the manager app only for its Managers, and in the AAC app only for its Communicators. Has a name, which may be blank (shown as an Untitled placeholder in the UI). In the AAC app, Vocabularies a Communicator can use are listed alphabetically by that display name. Has exactly one Palette. Created with an Initial Snapshot of its Boards, Snippets, Buttons, Snippet Inclusions, and Palette. Board order is unspecified except for the Home Board. Deleting a Vocabulary removes its Boards, Snippets, Buttons, Snippet Inclusions, Palette, Initial Snapshot, Change Sets, and Management/Usage relationships with it. Symbols are not part of a Vocabulary and are not removed.
+A curated collection of Boards and Snippets that Users can manage and/or use, via separate relationships. It appears in the manager app only for its Managers, and in the AAC app only for its Communicators. Has a name, which may be blank (shown as an Untitled placeholder in the UI). In the AAC app, Vocabularies a Communicator can use are listed alphabetically by that display name. Has exactly one Palette. Created with an Initial Snapshot of its Boards, Snippets, Buttons, Snippet Inclusions, and Palette. A duplicated Vocabulary is independent: its Initial Snapshot is the source Vocabulary's visible state at duplication, including staged edits when duplication begins in its editor, while those source edits remain unapplied; its Change Set history starts empty, the duplicating User is its sole Manager, and it starts with no Communicators. Board order is unspecified except for the Home Board. Deleting a Vocabulary removes its Boards, Snippets, Buttons, Snippet Inclusions, Palette, Initial Snapshot, Change Sets, and Management/Usage relationships with it. Symbols are not part of a Vocabulary and are not removed.
 _Avoid_: Page set, word list
 
 **Initial Snapshot**:
@@ -27,6 +27,14 @@ _Avoid_: Swatch, color token, named color (as a separate noun from Palette Color
 **Board**:
 A grid that belongs to exactly one Vocabulary, with a width and height (columns and rows) describing its visible viewport. Width and height are integers ≥ 1. Has a name, which may be blank (shown as an Untitled placeholder in the UI). Boards are not shared across Vocabularies; reuse is by copy. Ordering among Boards in a Vocabulary is unspecified for now. Viewport coordinates are 0-based: in-viewport columns are `0 .. width-1`, rows `0 .. height-1`. A Board may hold Snippet Inclusions. A Board cannot outlive its Vocabulary; deleting a Board removes its Buttons and its Snippet Inclusions — the included Snippets themselves remain.
 _Avoid_: Page, screen, grid (as the name of this concept)
+
+**Board Copy**:
+A new independent Board, created immediately through one Applied Change Set, containing all of a source Board's visible-state Buttons and Snippet Inclusions without applying pending source edits; content outside its viewport and relative overlap order are preserved. Within one Vocabulary it includes the existing live Snippets and retains Palette Color bindings and Open Board Actions; across Vocabularies it copies the included Snippets and their dependency closure, freezes Palette Color bindings as custom hexes, remaps self-opening Actions to the new Board, and clears Actions targeting other Boards.
+_Avoid_: Board clone, shared Board, duplicate Board (as the name of this concept)
+
+**Unresolved Copy Action**:
+A Manager-only warning attached to a copied Button whose Open Board Action was cleared because its target was not copied into the destination Vocabulary. It remains until a Manager assigns a valid Action or deletes the Button; it cannot be dismissed while the Button remains unresolved, is not an Action, and is not visible in the AAC app.
+_Avoid_: Broken link, invalid Action, dangling Action
 
 **Home Board**:
 The Board a Communicator enters when opening a Vocabulary that has at least one Board. It is the earliest-created Board (oldest creation time; if tied, the one with the lower identifier). A Vocabulary with no Boards has no Home Board. Snippets are not Boards and cannot be a Home Board. Manager-chosen Home Board is unspecified for now. The AAC app’s **Home** control opens the Home Board (no-op if already there); it is not a Button Action and does not use a Board history stack.

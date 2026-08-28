@@ -1,0 +1,3 @@
+# Invalid copied Actions become durable manager warnings
+
+When a Board is copied across Vocabularies, an Open Board Action whose target is not copied is cleared rather than persisted as an invalid Action or expanded into an implicit copy of every referenced Board. The copied Button receives a durable, manager-only Unresolved Copy Action instead: Managers see the affected Button highlighted and can resolve the warning only by assigning a valid Action or deleting the Button, while Communicators see a safe Button with no Action. A temporary or dismissible warning was rejected because it could permanently hide copying damage before the Button is repaired.

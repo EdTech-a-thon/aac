@@ -7,6 +7,10 @@
 	import { setDashboard, type DashboardState } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth, readAuth } from '$lib/auth';
 	import type { Vocabulary } from '$lib/types';
+	import {
+		getVocabularyEditorSession,
+		visibleVocabularySnapshot
+	} from '$lib/vocabularyEditorSession';
 
 	let { children } = $props();
 
@@ -33,6 +37,10 @@
 	let renaming = $state(false);
 	let renameInput = $state<HTMLInputElement | null>(null);
 	let createNameInput = $state<HTMLInputElement | null>(null);
+	let duplicateSource = $state<Vocabulary | null>(null);
+	let duplicateName = $state('');
+	let duplicating = $state(false);
+	let duplicateError = $state<string | null>(null);
 
 	const selectedId = $derived(page.params.id ?? null);
 
@@ -159,6 +167,43 @@
 			renaming = false;
 		}
 	}
+
+	function openDuplicate(vocabulary: Vocabulary) {
+		duplicateSource = vocabulary;
+		duplicateName = `Copy of ${vocabulary.displayName}`;
+		duplicateError = null;
+	}
+
+	async function duplicateVocabulary(event: SubmitEvent) {
+		event.preventDefault();
+		if (!dashboard.auth || !duplicateSource || duplicating) return;
+		duplicating = true;
+		duplicateError = null;
+		try {
+			// A duplicate is taken from what the Manager can see. If this Vocabulary
+			// is open in the editor, that includes their staged edits — which stay
+			// staged and unapplied on the source.
+			const session = getVocabularyEditorSession(duplicateSource.id);
+			const snapshot = session.hydrated ? visibleVocabularySnapshot(session) : undefined;
+			const data = await apiFetch<{ vocabulary: Vocabulary }>(
+				`/vocabularies/${duplicateSource.id}/duplicate`,
+				{
+					method: 'POST',
+					accessToken: dashboard.auth.session.access_token,
+					body: JSON.stringify(
+						snapshot ? { name: duplicateName, snapshot } : { name: duplicateName }
+					)
+				}
+			);
+			addVocabulary(data.vocabulary);
+			duplicateSource = null;
+			await goto(`/vocabularies/${data.vocabulary.id}`);
+		} catch (err) {
+			duplicateError = err instanceof Error ? err.message : 'Failed to duplicate vocabulary';
+		} finally {
+			duplicating = false;
+		}
+	}
 </script>
 
 <div class="grid h-screen grid-cols-[16rem_1fr] grid-rows-[3rem_1fr] overflow-hidden bg-slate-100">
@@ -252,6 +297,16 @@
 													class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
 													onclick={() => {
 														close();
+														openDuplicate(vocabulary);
+													}}
+												>
+													Duplicate vocabulary
+												</button>
+												<button
+													type="button"
+													class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+													onclick={() => {
+														close();
 														startRename(vocabulary);
 													}}
 												>
@@ -319,6 +374,36 @@
 			disabled={creating}
 		>
 			{creating ? 'Creating…' : 'Create'}
+		</button>
+	{/snippet}
+</Modal>
+
+<Modal
+	open={duplicateSource !== null}
+	title="Duplicate vocabulary"
+	onClose={() => (duplicateSource = null)}
+>
+	<form class="space-y-4" id="duplicate-vocabulary-form" onsubmit={duplicateVocabulary}>
+		<p class="text-sm text-slate-600">
+			The duplicate starts with fresh access: you will be its only Manager and it will have no Communicators.
+		</p>
+		<label class="block space-y-1.5">
+			<span class="text-sm font-medium text-slate-700">Name</span>
+			<input
+				class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+				type="text"
+				placeholder="Copy of Untitled"
+				bind:value={duplicateName}
+			/>
+		</label>
+		{#if duplicateError}
+			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{duplicateError}</p>
+		{/if}
+	</form>
+	{#snippet footer()}
+		<button type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onclick={() => (duplicateSource = null)}>Cancel</button>
+		<button type="submit" form="duplicate-vocabulary-form" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={duplicating}>
+			{duplicating ? 'Duplicating…' : 'Duplicate'}
 		</button>
 	{/snippet}
 </Modal>
