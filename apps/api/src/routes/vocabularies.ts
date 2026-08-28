@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
+import { displayName, withDisplayName } from "../displayName.ts";
 import {
   prepareBoardCopy,
   remapVocabularySnapshot,
@@ -209,14 +210,6 @@ type ChangeSet = {
 const CHANGE_SET_ONLY_MESSAGE =
   "Boards and buttons can only be changed by submitting a Change Set";
 
-function displayName(name: string | null | undefined) {
-  return name && name.trim() ? name : "Untitled";
-}
-
-function withDisplayName<T extends { name: string }>(row: T) {
-  return { ...row, displayName: displayName(row.name) };
-}
-
 function pgErrorMessage(error: { message: string } | null) {
   return error?.message ?? "Request failed";
 }
@@ -371,6 +364,54 @@ vocabularyRoutes.post("/:id/boards/:boardId/copy", async (c) => {
     { boardId: prepared.boardId, changeSet: data as ChangeSet, warnings: prepared.warnings },
     201,
   );
+});
+
+type ShareLink = {
+  id: string;
+  token: string;
+  vocabulary_id: string;
+  board_id: string | null;
+  created_at: string;
+};
+
+// A Share Link is a grant, not Vocabulary data: it is made outside Change Sets
+// and only ever names one Vocabulary. See ADR 0010.
+vocabularyRoutes.get("/:id/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  const { data, error } = await supabase
+    .from("share_links")
+    .select("id, token, vocabulary_id, board_id, created_at")
+    .eq("vocabulary_id", id)
+    .is("board_id", null)
+    .maybeSingle();
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ shareLink: (data as ShareLink | null) ?? null });
+});
+
+vocabularyRoutes.post("/:id/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const { data, error } = await supabase.rpc("create_share_link", {
+    p_vocabulary_id: id,
+    p_board_id: null,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ shareLink: data as ShareLink }, 201);
+});
+
+vocabularyRoutes.delete("/:id/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const { error } = await supabase.rpc("revoke_share_link", {
+    p_vocabulary_id: id,
+    p_board_id: null,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ ok: true });
 });
 
 vocabularyRoutes.get("/:id/unresolved-copy-actions", async (c) => {

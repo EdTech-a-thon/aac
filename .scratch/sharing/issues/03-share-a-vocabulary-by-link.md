@@ -6,7 +6,7 @@ The Share Link is a capability: holding it is the permission. It shows the live 
 
 **Blocked by:** 02 — The board canvas takes its data from an injected source.
 
-**Status:** ready-for-agent
+**Status:** implemented, unverified — the acceptance criteria below are covered by tests that stay red until the Share Link migration is applied
 
 - [ ] A Manager can create a Share Link for a Vocabulary they manage, and copy it.
 - [ ] There is at most one live Share Link per Vocabulary; asking again yields the same one rather than a second.

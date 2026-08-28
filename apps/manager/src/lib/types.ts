@@ -84,3 +84,11 @@ export type Communicator = {
 	name: string | null;
 	createdAt: string;
 };
+
+export type ShareLink = {
+	id: string;
+	token: string;
+	vocabulary_id: string;
+	board_id: string | null;
+	created_at: string;
+};

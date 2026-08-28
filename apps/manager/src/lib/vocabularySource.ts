@@ -108,3 +108,29 @@ export function managedVocabularySource(auth: AuthState): VocabularySource {
 		uploadSymbol: (file) => uploadSymbol(file, accessToken)
 	};
 }
+
+export type SharedVocabulary = {
+	share: { kind: 'vocabulary'; vocabulary: Vocabulary };
+	content: VocabularyContent;
+};
+
+/** Open a Share Link. The token is the whole permission — there is no session. */
+export function loadSharedVocabulary(token: string): Promise<SharedVocabulary> {
+	return apiFetch<SharedVocabulary>(`/shared/${token}`);
+}
+
+/**
+ * A Vocabulary as a Visitor following a Share Link sees it: already fetched,
+ * and not theirs to write. Nothing here can reach the source Vocabulary.
+ */
+export function sharedVocabularySource(content: VocabularyContent): VocabularySource {
+	const refused = () => Promise.reject(new Error('Sign in to keep your own copy of this.'));
+	return {
+		canWrite: false,
+		loadContent: async () => content,
+		loadSuggestedChangeSets: async () => [],
+		listCopyDestinations: async () => [],
+		copyBoard: refused,
+		uploadSymbol: refused
+	};
+}

@@ -8,7 +8,7 @@
 	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
 	import { getDashboard } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth } from '$lib/auth';
-	import type { Communicator, Manager, Vocabulary } from '$lib/types';
+	import type { Communicator, Manager, ShareLink, Vocabulary } from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
@@ -44,6 +44,61 @@
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 
+	let shareLink = $state<ShareLink | null>(null);
+	let shareLinkBusy = $state(false);
+	let shareLinkCopied = $state(false);
+	const shareLinkUrl = $derived(
+		shareLink && typeof window !== 'undefined'
+			? `${window.location.origin}/shared/${shareLink.token}`
+			: ''
+	);
+
+	async function createShareLink() {
+		if (!dashboard.auth || !vocabulary || shareLinkBusy) return;
+		shareLinkBusy = true;
+		shareError = null;
+		try {
+			const data = await apiFetch<{ shareLink: ShareLink }>(
+				`/vocabularies/${vocabulary.id}/share-link`,
+				{ method: 'POST', accessToken: dashboard.auth.session.access_token }
+			);
+			shareLink = data.shareLink;
+			shareLinkCopied = false;
+		} catch (err) {
+			shareError = err instanceof Error ? err.message : 'Failed to create a link';
+		} finally {
+			shareLinkBusy = false;
+		}
+	}
+
+	async function revokeShareLink() {
+		if (!dashboard.auth || !vocabulary || shareLinkBusy) return;
+		shareLinkBusy = true;
+		shareError = null;
+		try {
+			await apiFetch(`/vocabularies/${vocabulary.id}/share-link`, {
+				method: 'DELETE',
+				accessToken: dashboard.auth.session.access_token
+			});
+			shareLink = null;
+			shareLinkCopied = false;
+		} catch (err) {
+			shareError = err instanceof Error ? err.message : 'Failed to turn off the link';
+		} finally {
+			shareLinkBusy = false;
+		}
+	}
+
+	async function copyShareLink() {
+		if (!shareLinkUrl) return;
+		try {
+			await navigator.clipboard.writeText(shareLinkUrl);
+			shareLinkCopied = true;
+		} catch {
+			shareError = 'Could not copy the link — select it and copy manually.';
+		}
+	}
+
 	$effect(() => {
 		const id = vocabularyId;
 		const auth = dashboard.auth;
@@ -55,7 +110,7 @@
 			loading = true;
 			error = null;
 			try {
-				const [vocabData, managersData, communicatorsData] = await Promise.all([
+				const [vocabData, managersData, communicatorsData, shareData] = await Promise.all([
 					apiFetch<{ vocabulary: Vocabulary }>(`/vocabularies/${id}`, {
 						accessToken: auth.session.access_token
 					}),
@@ -64,6 +119,9 @@
 					}),
 					apiFetch<{ communicators: Communicator[] }>(`/vocabularies/${id}/communicators`, {
 						accessToken: auth.session.access_token
+					}),
+					apiFetch<{ shareLink: ShareLink | null }>(`/vocabularies/${id}/share-link`, {
+						accessToken: auth.session.access_token
 					})
 				]);
 				if (cancelled) return;
@@ -71,6 +129,7 @@
 				nameDraft = vocabData.vocabulary.name;
 				managers = managersData.managers;
 				communicators = communicatorsData.communicators;
+				shareLink = shareData.shareLink;
 			} catch (err) {
 				if (cancelled) return;
 				if (err instanceof ApiError && err.status === 401) {
@@ -415,6 +474,50 @@
 					{invitingCommunicator ? 'Adding…' : 'Add'}
 				</button>
 			</form>
+		</section>
+
+		<section class="space-y-3">
+			<div>
+				<h3 class="text-sm font-semibold text-slate-800">Public link</h3>
+				<p class="mt-1 text-sm text-slate-500">
+					Anyone with the link can see this vocabulary without an account. Turning it off
+					makes that link stop working for good.
+				</p>
+			</div>
+			{#if shareLink}
+				<div class="flex flex-wrap items-center gap-2">
+					<input
+						class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 outline-none"
+						type="text"
+						readonly
+						value={shareLinkUrl}
+					/>
+					<button
+						type="button"
+						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+						onclick={copyShareLink}
+					>
+						{shareLinkCopied ? 'Copied' : 'Copy'}
+					</button>
+					<button
+						type="button"
+						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+						disabled={shareLinkBusy}
+						onclick={revokeShareLink}
+					>
+						{shareLinkBusy ? 'Turning off…' : 'Turn off'}
+					</button>
+				</div>
+			{:else}
+				<button
+					type="button"
+					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={shareLinkBusy}
+					onclick={createShareLink}
+				>
+					{shareLinkBusy ? 'Creating…' : 'Create a public link'}
+				</button>
+			{/if}
 		</section>
 
 		{#if shareMessage}

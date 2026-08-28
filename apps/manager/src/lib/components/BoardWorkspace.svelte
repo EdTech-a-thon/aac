@@ -750,7 +750,7 @@
 	}
 
 	async function openCopy() {
-		if (!selectedBoard || isSnippet(selectedBoard)) return;
+		if (!selectedBoard || isSnippet(selectedBoard) || !source.canWrite) return;
 		copyName = `Copy of ${selectedBoard.displayName}`;
 		copyDestinationId = vocabularyId;
 		copyError = null;
@@ -1217,6 +1217,10 @@
 	 * refused — in which case nothing is changed, so a failure never half-applies.
 	 */
 	async function storeSymbol(file: File | Blob): Promise<string | null> {
+		if (!source.canWrite) {
+			propsError = 'Sign in to add a Symbol.';
+			return null;
+		}
 		propsError = null;
 		error = null;
 		symbolBusy = true;
@@ -1574,7 +1578,7 @@
 					</button>
 				{/snippet}
 				{#snippet children({ close })}
-					{#if !isSnippet(selectedBoard)}
+					{#if !isSnippet(selectedBoard) && source.canWrite}
 						<button
 							type="button"
 							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
