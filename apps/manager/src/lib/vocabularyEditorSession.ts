@@ -370,3 +370,42 @@ export function visibleVocabularySnapshot(session: VocabularyEditorSession) {
 function toBoardSnapshotWithCreation(board: Board) {
 	return { ...toBoardSnapshot(board), created_at: board.created_at };
 }
+
+/**
+ * A Visitor's staged edits, on their own — the live state they were sent is
+ * fetched fresh each time and is not theirs to keep. See ADR 0011.
+ */
+export function editorDraftState(session: VocabularyEditorSession) {
+	return {
+		boards: cloneBoards(session.boards),
+		buttonsByBoardId: cloneButtonsByBoardId(session.buttonsByBoardId),
+		paletteColors: clonePaletteColors(session.paletteColors),
+		snippetInclusions: structuredClone(session.snippetInclusions)
+	};
+}
+
+/**
+ * Lay a Visitor's kept edits back over freshly loaded live state, so what they
+ * see is what they left and their changes still read as unsaved.
+ */
+export function applyEditorDraft(
+	session: VocabularyEditorSession,
+	draft: {
+		boards: Board[];
+		buttonsByBoardId: Record<string, BoardButton[]>;
+		paletteColors: PaletteColor[];
+		snippetInclusions: SnippetInclusion[];
+	}
+) {
+	session.boards = cloneBoards(draft.boards);
+	session.buttonsByBoardId = cloneButtonsByBoardId(draft.buttonsByBoardId);
+	session.paletteColors = clonePaletteColors(draft.paletteColors);
+	session.snippetInclusions = structuredClone(draft.snippetInclusions);
+	if (
+		!session.selectedBoardId ||
+		!session.boards.some((board) => board.id === session.selectedBoardId)
+	) {
+		session.selectedBoardId = session.boards[0]?.id ?? null;
+	}
+	bumpEditorRevision();
+}

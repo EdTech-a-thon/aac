@@ -6,7 +6,7 @@ Their edits live only in their own browser. See ADR 0011. Saving them arrives in
 
 **Blocked by:** 03 — Share a Vocabulary by link.
 
-**Status:** ready-for-agent
+**Status:** implemented. Draft keeping and restoring are covered by unit tests; the end-to-end path needs the Share Link migration
 
 - [ ] A Visitor can make the full range of edits a Manager can stage on the canvas, with one exception below, and see them reflected immediately.
 - [ ] A Visitor cannot add a Symbol, and the control makes clear this needs an account.

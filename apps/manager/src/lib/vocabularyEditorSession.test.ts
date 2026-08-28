@@ -2,7 +2,9 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
 	__resetVocabularyEditorSessionsForTests,
 	acceptEditorBase,
+	applyEditorDraft,
 	discardEditorChanges,
+	editorDraftState,
 	getVocabularyEditorSession,
 	pendingBoardButtonMutations,
 	rebaseEditorOntoLiveFromServer,
@@ -218,5 +220,49 @@ describe('vocabularyEditorSession Symbols', () => {
 		expect(snapshot.boards.map((entry) => entry.name)).toEqual(['Renamed', 'Staged']);
 		// The staged edits are still staged — the snapshot did not consume them.
 		expect(pendingBoardButtonMutations(session).length).toBeGreaterThan(0);
+	});
+
+	it('reports a Visitor’s staged edits without the live state they were sent', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [] });
+		session.boards = [{ ...board, name: 'Renamed by a Visitor' }];
+
+		const draft = editorDraftState(session);
+
+		expect(draft.boards[0].name).toBe('Renamed by a Visitor');
+		expect(session.baseBoards[0].name).toBe('Home');
+	});
+
+	it('lays a kept draft back over freshly loaded live state, still unsaved', () => {
+		const first = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(first, [board], { 'board-1': [] });
+		first.boards = [{ ...board, name: 'Edited' }];
+		const draft = editorDraftState(first);
+
+		__resetVocabularyEditorSessionsForTests();
+		const reopened = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(reopened, [board], { 'board-1': [] });
+		expect(pendingBoardButtonMutations(reopened)).toHaveLength(0);
+
+		applyEditorDraft(reopened, draft);
+
+		expect(reopened.boards[0].name).toBe('Edited');
+		expect(reopened.baseBoards[0].name).toBe('Home');
+		expect(pendingBoardButtonMutations(reopened).length).toBeGreaterThan(0);
+	});
+
+	it('keeps a usable selection when the draft no longer holds the selected Board', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board, board2], { 'board-1': [], 'board-2': [] });
+		session.selectedBoardId = 'board-2';
+
+		applyEditorDraft(session, {
+			boards: [board],
+			buttonsByBoardId: { 'board-1': [] },
+			paletteColors: [],
+			snippetInclusions: []
+		});
+
+		expect(session.selectedBoardId).toBe('board-1');
 	});
 });
