@@ -1,0 +1,9 @@
+# Anonymous edits live only in the visitor's browser
+
+A Visitor following a Share Link may edit what they see before signing in, and those edits are staged in their own browser over the live source and never reach the server. There is no anonymous draft table and no anonymous authentication: both would create durable server state for every drive-by visitor, needing garbage collection and a new RLS surface, and anonymous auth would additionally turn "sign up to save" into an account-linking problem. The path already exists instead — only a Manager may submit a Change Set, so a Visitor's edits can never join the source's history, and on sign-in the visible state including those edits becomes the Initial Snapshot of a new Vocabulary through the existing duplication path, which already accepts a client-supplied snapshot.
+
+Drafts persist in browser storage keyed by the Share Link, so a reload or the sign-in round trip does not destroy work at the moment it matters most. The cost is that a draft belongs to one device and one browser profile, and is lost if storage is cleared.
+
+## Consequences
+
+Email confirmation is currently disabled on this project, so registration returns a session and a brand-new account completes a save in one step. That is a configuration, not a guarantee: registration already has a branch that returns no session, and if confirmation is ever enabled the Visitor must stay on the page with their edits intact and save after confirming, rather than being navigated away. Disabling confirmation *in order to* smooth this flow would be the wrong trade in a product holding children's photographs; we are relying on it, not choosing it. Symbol upload stays signed-in only, because uploading writes permanent bytes to a shared bucket that nothing garbage-collects — the one editing action that escapes the browser.
