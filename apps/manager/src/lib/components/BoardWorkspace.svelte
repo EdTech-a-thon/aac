@@ -5,12 +5,11 @@
 	import ButtonFace from '$lib/components/ButtonFace.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { apiFetch, symbolUrl, uploadSymbol, type AuthState } from '$lib/auth';
+	import { symbolUrl } from '$lib/auth';
 	import { cellRef, columnLetter, rowNumber } from '$lib/boardCellRef';
 	import { actionsEqual, type ButtonAction } from '$lib/buttonAction';
 	import { emptyCellClickAction } from '$lib/emptyCellClick';
 	import { resolveButtonHex as resolveFaceHex } from '$lib/buttonFace';
-	import { normalizeSuggestedChangeSets } from '$lib/describeChangeSetMutations';
 	import {
 		contrastingTextColor,
 		DEFAULT_BUTTON_COLOR,
@@ -23,7 +22,6 @@
 		type Board,
 		type BoardButton,
 		type GridKind,
-		type PaletteColor,
 		type SnippetInclusion,
 		type UnresolvedCopyAction,
 		type Vocabulary
@@ -34,16 +32,16 @@
 		replaceEditorLiveFromServer,
 		rebaseEditorOntoLiveFromServer,
 		subscribeEditorRevision,
-		visibleVocabularySnapshot,
-		type SuggestedChangeSet
+		visibleVocabularySnapshot
 	} from '$lib/vocabularyEditorSession';
+	import type { VocabularySource } from '$lib/vocabularySource';
 
 	let {
 		vocabularyId,
-		auth
+		source
 	}: {
 		vocabularyId: string;
-		auth: AuthState;
+		source: VocabularySource;
 	} = $props();
 
 	const CELL = 96;
@@ -218,10 +216,6 @@
 				!wouldCreateSnippetInclusionCycle(snippetInclusions, selectedBoardId, snippet.id)
 		);
 	});
-
-	function withGridKind(board: Board): Board {
-		return { ...board, kind: board.kind === 'snippet' ? 'snippet' : 'board' };
-	}
 
 	const selectedBoard = $derived(
 		boards.find((board) => board.id === selectedBoardId) ?? null
@@ -491,7 +485,7 @@
 
 	$effect(() => {
 		const id = vocabularyId;
-		const token = auth.session.access_token;
+		const from = source;
 		const current = getVocabularyEditorSession(id);
 		let cancelled = false;
 
@@ -500,14 +494,9 @@
 
 			async function refreshSuggested() {
 				try {
-					const suggested = await apiFetch<{ changeSets: SuggestedChangeSet[] }>(
-						`/vocabularies/${id}/change-sets?status=suggested`,
-						{ accessToken: token }
-					);
+					const changeSets = await from.loadSuggestedChangeSets(id);
 					if (!cancelled) {
-						persistEditorSession(current, {
-							suggestedChangeSets: normalizeSuggestedChangeSets(suggested.changeSets)
-						});
+						persistEditorSession(current, { suggestedChangeSets: changeSets });
 					}
 				} catch {
 					if (!cancelled) {
@@ -526,47 +515,17 @@
 			loadingBoards = true;
 			loadingButtons = true;
 			try {
-				const [data, paletteData, inclusionData, warningData] = await Promise.all([
-					apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, {
-						accessToken: token
-					}),
-					apiFetch<{ paletteColors: import('$lib/types').PaletteColor[] }>(
-						`/vocabularies/${id}/palette-colors`,
-						{ accessToken: token }
-					),
-					apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
-						`/vocabularies/${id}/snippet-inclusions`,
-						{ accessToken: token }
-					),
-					apiFetch<{ unresolvedCopyActions: UnresolvedCopyAction[] }>(
-						`/vocabularies/${id}/unresolved-copy-actions`,
-						{ accessToken: token }
-					)
-				]);
-				if (cancelled) return;
-
-				const nextButtonsByBoardId: Record<string, BoardButton[]> = {};
-				await Promise.all(
-					data.boards.map(async (board) => {
-						const buttonData = await apiFetch<{ buttons: BoardButton[] }>(
-							`/vocabularies/${id}/boards/${board.id}/buttons`,
-							{ accessToken: token }
-						);
-						if (!cancelled) {
-							nextButtonsByBoardId[board.id] = buttonData.buttons;
-						}
-					})
-				);
+				const content = await from.loadContent(id);
 				if (cancelled) return;
 
 				replaceEditorLiveFromServer(
 					current,
-					data.boards.map(withGridKind),
-					nextButtonsByBoardId,
-					paletteData.paletteColors,
-					inclusionData.snippetInclusions
+					content.boards,
+					content.buttonsByBoardId,
+					content.paletteColors,
+					content.snippetInclusions
 				);
-				unresolvedCopyActions = warningData.unresolvedCopyActions;
+				unresolvedCopyActions = content.unresolvedCopyActions;
 				await refreshSuggested();
 			} catch (err) {
 				if (cancelled) return;
@@ -797,11 +756,7 @@
 		copyError = null;
 		copyOpen = true;
 		try {
-			const data = await apiFetch<{ vocabularies: Vocabulary[] }>(
-				'/vocabularies',
-				{ accessToken: auth.session.access_token }
-			);
-			copyVocabularies = data.vocabularies;
+			copyVocabularies = await source.listCopyDestinations();
 		} catch (err) {
 			copyError = err instanceof Error ? err.message : 'Failed to load destinations';
 		}
@@ -810,34 +765,14 @@
 	// A Board Copy applies straight away, so the destination's editor has to take
 	// the new live state on board while keeping any staged edits staged.
 	async function reloadAndRebase(id: string, copiedBoardId: string) {
-		const accessToken = auth.session.access_token;
-		const [boardData, paletteData, inclusionData] = await Promise.all([
-			apiFetch<{ boards: Board[] }>(`/vocabularies/${id}/boards`, { accessToken }),
-			apiFetch<{ paletteColors: PaletteColor[] }>(`/vocabularies/${id}/palette-colors`, {
-				accessToken
-			}),
-			apiFetch<{ snippetInclusions: SnippetInclusion[] }>(
-				`/vocabularies/${id}/snippet-inclusions`,
-				{ accessToken }
-			)
-		]);
-		const nextButtons: Record<string, BoardButton[]> = {};
-		await Promise.all(
-			boardData.boards.map(async (board) => {
-				const data = await apiFetch<{ buttons: BoardButton[] }>(
-					`/vocabularies/${id}/boards/${board.id}/buttons`,
-					{ accessToken }
-				);
-				nextButtons[board.id] = data.buttons;
-			})
-		);
+		const content = await source.loadContent(id);
 		const destinationSession = getVocabularyEditorSession(id);
 		rebaseEditorOntoLiveFromServer(
 			destinationSession,
-			boardData.boards.map(withGridKind),
-			nextButtons,
-			paletteData.paletteColors,
-			inclusionData.snippetInclusions
+			content.boards,
+			content.buttonsByBoardId,
+			content.paletteColors,
+			content.snippetInclusions
 		);
 		persistEditorSession(destinationSession, { selectedBoardId: copiedBoardId });
 	}
@@ -848,16 +783,14 @@
 		copyBusy = true;
 		copyError = null;
 		try {
-			const data = await apiFetch<{ boardId: string }>(`/vocabularies/${vocabularyId}/boards/${selectedBoard.id}/copy`, {
-				method: 'POST',
-				accessToken: auth.session.access_token,
-				// The copy is taken from what this Manager can see, staged edits
-				// included — while those edits stay staged on the source.
-				body: JSON.stringify({
-					destinationVocabularyId: copyDestinationId,
-					name: copyName,
-					snapshot: visibleVocabularySnapshot(session)
-				})
+			// The copy is taken from what this Manager can see, staged edits
+			// included — while those edits stay staged on the source.
+			const data = await source.copyBoard({
+				vocabularyId,
+				boardId: selectedBoard.id,
+				destinationVocabularyId: copyDestinationId,
+				name: copyName,
+				snapshot: visibleVocabularySnapshot(session)
 			});
 			await reloadAndRebase(copyDestinationId, data.boardId);
 			copyOpen = false;
@@ -1289,7 +1222,7 @@
 		symbolBusy = true;
 		try {
 			const bytes = await prepareSymbolFile(file);
-			const { digest } = await uploadSymbol(bytes, auth.session.access_token);
+			const { digest } = await source.uploadSymbol(bytes);
 			return digest;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Could not add that Symbol';

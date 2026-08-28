@@ -6,10 +6,10 @@ This is a prefactor. Make the change easy, then make the easy change — every t
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The canvas renders from data supplied to it rather than reaching for the signed-in User's credentials itself.
-- [ ] Actions that write — submitting Change Sets, uploading Symbols, copying a Board, reloading and rebasing — remain available and unchanged when a signed-in Manager is the source.
-- [ ] Whether the canvas may write is something it is told, not something it infers from whether it happens to hold credentials.
-- [ ] Every existing manager flow behaves exactly as before: opening a Vocabulary, editing, staging, saving, previewing a Suggested Change Set, and the Unresolved Copy Action warnings.
-- [ ] The full manager and API suites pass with no new failures, and typechecking is clean.
+- [x] The canvas renders from data supplied to it rather than reaching for the signed-in User's credentials itself.
+- [x] Actions that write — submitting Change Sets, uploading Symbols, copying a Board, reloading and rebasing — remain available and unchanged when a signed-in Manager is the source.
+- [x] Whether the canvas may write is something it is told, not something it infers from whether it happens to hold credentials.
+- [x] Every existing manager flow behaves exactly as before: opening a Vocabulary, editing, staging, saving, previewing a Suggested Change Set, and the Unresolved Copy Action warnings.
+- [x] The full manager and API suites pass with no new failures, and typechecking is clean.

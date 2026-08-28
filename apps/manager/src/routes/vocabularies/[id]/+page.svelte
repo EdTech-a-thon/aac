@@ -4,6 +4,7 @@
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import BoardWorkspace from '$lib/components/BoardWorkspace.svelte';
+	import { managedVocabularySource } from '$lib/vocabularySource';
 	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
 	import { getDashboard } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth } from '$lib/auth';
@@ -21,6 +22,12 @@
 	// would not take their access away. Don't offer a control that does
 	// nothing — say where the access comes from instead. See ADR 0012.
 	const managerIds = $derived(new Set(managers.map((manager) => manager.userId)));
+
+	// The canvas is told where its Vocabulary comes from and what it may do
+	// with it, rather than reaching for this Manager's session itself.
+	const vocabularySource = $derived(
+		dashboard.auth ? managedVocabularySource(dashboard.auth) : null
+	);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let savingName = $state(false);
@@ -308,9 +315,9 @@
 			{#if error}
 				<p class="m-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
 			{/if}
-			{#if dashboard.auth}
+			{#if vocabularySource}
 				<div class="min-h-0 flex-1">
-					<BoardWorkspace vocabularyId={vocabulary.id} auth={dashboard.auth} />
+					<BoardWorkspace vocabularyId={vocabulary.id} source={vocabularySource} />
 				</div>
 			{/if}
 		</div>
