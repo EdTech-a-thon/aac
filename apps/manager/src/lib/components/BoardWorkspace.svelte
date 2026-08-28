@@ -7,6 +7,7 @@
 	import { apiFetch, symbolUrl, uploadSymbol, type AuthState } from '$lib/auth';
 	import { cellRef, columnLetter, rowNumber } from '$lib/boardCellRef';
 	import { actionsEqual, type ButtonAction } from '$lib/buttonAction';
+	import { emptyCellClickAction } from '$lib/emptyCellClick';
 	import { resolveButtonHex as resolveFaceHex } from '$lib/buttonFace';
 	import { normalizeSuggestedChangeSets } from '$lib/describeChangeSetMutations';
 	import {
@@ -1646,11 +1647,11 @@
 									onclick={(event) => {
 										event.stopPropagation();
 										if (occupying && !isDragOrigin) return;
-										if (selection) {
-											clearSelection();
-											return;
-										}
-										if (coveringInclusion) {
+										if (
+											emptyCellClickAction(Boolean(selection), Boolean(coveringInclusion)) ===
+												'select-inclusion' &&
+											coveringInclusion
+										) {
 											selectInclusion(coveringInclusion, event);
 											return;
 										}
