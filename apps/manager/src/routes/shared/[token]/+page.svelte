@@ -5,8 +5,11 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import VisitorSignIn from '$lib/components/VisitorSignIn.svelte';
 	import { readAuth } from '$lib/auth';
+	import type { Vocabulary } from '$lib/types';
 	import {
 		loadSharedVocabulary,
+		listOwnVocabularies,
+		saveSharedBoard,
 		saveSharedVocabulary,
 		sharedVocabularySource,
 		type SharedVocabulary,
@@ -57,6 +60,12 @@
 	let signInOpen = $state(false);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
+
+	// Keeping a shared Board asks where it should go.
+	let destinationOpen = $state(false);
+	let destinations = $state<Vocabulary[]>([]);
+	let destinationId = $state('');
+	let destinationName = $state('');
 
 	// A Board Share Link is named by its Board; a Vocabulary link by the Vocabulary.
 	const title = $derived(
@@ -126,6 +135,18 @@
 			signInOpen = true;
 			return;
 		}
+		if (currentShared.board) {
+			destinationName = currentShared.board.name;
+			destinationId = '';
+			destinationOpen = true;
+			saveError = null;
+			try {
+				destinations = await listOwnVocabularies(auth.session.access_token);
+			} catch {
+				destinations = [];
+			}
+			return;
+		}
 		saving = true;
 		saveError = null;
 		try {
@@ -143,6 +164,30 @@
 		} catch (err) {
 			// A link revoked while they worked must not cost them their edits.
 			saveError = err instanceof Error ? err.message : 'Could not save this';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function keepBoard() {
+		const currentShared = shared;
+		const auth = readAuth();
+		if (!currentShared || !auth || saving) return;
+		saving = true;
+		saveError = null;
+		try {
+			const session = getVocabularyEditorSession(currentShared.vocabulary.id);
+			const saved = await saveSharedBoard(token, auth.session.access_token, {
+				destinationVocabularyId: destinationId || undefined,
+				name: destinationName,
+				snapshot: visibleVocabularySnapshot(session)
+			});
+			const storage = browserDraftStorage();
+			if (storage) clearVisitorDraft(storage, token);
+			destinationOpen = false;
+			await goto(`/vocabularies/${saved.vocabulary?.id ?? saved.vocabularyId}`);
+		} catch (err) {
+			saveError = err instanceof Error ? err.message : 'Could not keep this board';
 		} finally {
 			saving = false;
 		}
@@ -260,4 +305,49 @@
 
 <Modal bind:open={signInOpen} title="Save this to your account">
 	<VisitorSignIn {onauthed} />
+</Modal>
+
+<Modal bind:open={destinationOpen} title="Keep this board">
+	<form
+		class="space-y-3"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void keepBoard();
+		}}
+	>
+		<label class="block space-y-1">
+			<span class="text-sm font-medium text-slate-700">Name</span>
+			<input
+				class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+				type="text"
+				bind:value={destinationName}
+			/>
+		</label>
+		<label class="block space-y-1">
+			<span class="text-sm font-medium text-slate-700">Where should it go?</span>
+			<select
+				class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+				bind:value={destinationId}
+			>
+				<option value="">A new vocabulary</option>
+				{#each destinations as candidate (candidate.id)}
+					<option value={candidate.id}>{candidate.displayName}</option>
+				{/each}
+			</select>
+		</label>
+		<p class="text-sm text-slate-500">
+			{destinationId
+				? 'Buttons that open another board will need new actions, and colours become fixed to their current shade.'
+				: 'Its colours come across as a palette you can keep editing.'}
+		</p>
+		<div class="flex justify-end">
+			<button
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+				type="submit"
+				disabled={saving}
+			>
+				{saving ? 'Saving…' : 'Keep it'}
+			</button>
+		</div>
+	</form>
 </Modal>

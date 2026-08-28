@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { createServiceSupabaseClient } from "../supabase.ts";
 import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
 import {
+  prepareBoardCopy,
   remapVocabularySnapshot,
   type VocabularyCopySnapshot,
 } from "../copyVocabulary.ts";
@@ -223,4 +224,90 @@ sharedRoutes.post("/:token/save", requireAuth, async (c) => {
   );
   if (error) return c.json({ error: error.message }, 400);
   return c.json({ vocabulary: withDisplayName(data as { id: string; name: string }) }, 201);
+});
+
+/**
+ * Keep a Board that arrived through a Share Link. Into a brand-new Vocabulary
+ * it lands with its Palette Color bindings intact — there is no incumbent
+ * Palette to confuse it with. Into a Vocabulary the saver already manages it
+ * is an ordinary Board Copy across Vocabularies, freezing those bindings to
+ * custom hexes and raising Unresolved Copy Actions for Actions it must clear.
+ */
+sharedRoutes.post("/:token/save-board", requireAuth, async (c) => {
+  const token = c.req.param("token");
+  if (!looksLikeToken(token)) return c.json(UNAVAILABLE, 404);
+
+  const service = createServiceSupabaseClient();
+  const linkResult = await service
+    .from("share_links")
+    .select("vocabulary_id, board_id")
+    .eq("token", token)
+    .maybeSingle();
+  if (linkResult.error || !linkResult.data) return c.json(UNAVAILABLE, 404);
+  const link = linkResult.data as ShareLinkRow;
+  if (link.board_id === null) return c.json(UNAVAILABLE, 404);
+
+  type SaveBoardBody = {
+    destinationVocabularyId?: string;
+    name?: string;
+    snapshot?: VocabularyCopySnapshot;
+  };
+  const body = await c.req
+    .json<SaveBoardBody>()
+    .catch((): SaveBoardBody => ({}));
+  if (!body.snapshot) return c.json({ error: "snapshot is required" }, 400);
+
+  const supabase = c.get("supabase");
+  const sourceBoard = body.snapshot.boards.find((board) => board.id === link.board_id);
+  const name = typeof body.name === "string" && body.name
+    ? body.name
+    : (sourceBoard?.name ?? "");
+
+  // No destination named means a Vocabulary of their own, built around this
+  // Board. Its Palette Colors come across as Palette Colors, bindings intact.
+  if (!body.destinationVocabularyId) {
+    const copied = remapVocabularySnapshot(body.snapshot);
+    const { data, error } = await supabase.rpc("create_vocabulary_from_snapshot", {
+      p_name: name,
+      p_initial_snapshot: copied.initialSnapshot,
+      p_mutations: copied.mutations,
+    });
+    if (error) return c.json({ error: error.message }, 400);
+    return c.json(
+      { vocabulary: withDisplayName(data as { id: string; name: string }) },
+      201,
+    );
+  }
+
+  let prepared;
+  try {
+    prepared = prepareBoardCopy(
+      body.snapshot,
+      link.vocabulary_id,
+      body.destinationVocabularyId,
+      link.board_id,
+      name,
+    );
+  } catch (error) {
+    return c.json(
+      { error: error instanceof Error ? error.message : "Could not keep this Board" },
+      400,
+    );
+  }
+
+  const { error } = await supabase.rpc("save_shared_board", {
+    p_destination_vocabulary_id: body.destinationVocabularyId,
+    p_mutations: prepared.mutations,
+    p_warnings: prepared.warnings,
+    p_summary: `Kept shared Board “${name || "Untitled"}”`,
+  });
+  if (error) return c.json({ error: error.message }, 400);
+  return c.json(
+    {
+      vocabularyId: body.destinationVocabularyId,
+      boardId: prepared.boardId,
+      warnings: prepared.warnings,
+    },
+    201,
+  );
 });

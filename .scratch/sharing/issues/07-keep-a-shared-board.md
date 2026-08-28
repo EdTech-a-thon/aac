@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Share a Board by link; 06 — Sign in and keep a shared Vocabulary.
 
-**Status:** ready-for-agent
+**Status:** implemented, unverified — covered by integration tests that stay red until the Share Link, snapshot, and shared-Board migrations are applied
 
 - [ ] A Visitor can choose between creating a new Vocabulary for the Board and adding it to one they already manage, and is shown the Vocabularies available to them.
 - [ ] Saved into a new Vocabulary: the Board and the Snippets it needs arrive, the Palette Colors its Buttons bind to arrive as real Palette Colors with those bindings intact, and editing one recolours every Button bound to it.

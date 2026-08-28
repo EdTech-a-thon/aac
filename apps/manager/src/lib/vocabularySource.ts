@@ -182,3 +182,26 @@ export function saveSharedVocabulary(
 		body: JSON.stringify({ name, snapshot })
 	});
 }
+
+/**
+ * Keep a Board that arrived through a Share Link. With no destination it
+ * becomes a Vocabulary of its own; with one, it is copied into a Vocabulary
+ * the saver already manages.
+ */
+export function saveSharedBoard(
+	token: string,
+	accessToken: string,
+	body: { destinationVocabularyId?: string; name: string; snapshot: unknown }
+): Promise<{ vocabulary?: Vocabulary; vocabularyId?: string; boardId?: string }> {
+	return apiFetch(`/shared/${token}/save-board`, {
+		method: 'POST',
+		accessToken,
+		body: JSON.stringify(body)
+	});
+}
+
+/** The Vocabularies a signed-in saver could keep a shared Board in. */
+export async function listOwnVocabularies(accessToken: string): Promise<Vocabulary[]> {
+	return (await apiFetch<{ vocabularies: Vocabulary[] }>('/vocabularies', { accessToken }))
+		.vocabularies;
+}
