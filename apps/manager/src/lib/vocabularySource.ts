@@ -10,6 +10,7 @@ import type {
 	Board,
 	BoardButton,
 	PaletteColor,
+	ShareLink,
 	SnippetInclusion,
 	UnresolvedCopyAction,
 	Vocabulary
@@ -37,6 +38,9 @@ export type VocabularySource = {
 	listCopyDestinations(): Promise<Vocabulary[]>;
 	copyBoard(request: BoardCopyRequest): Promise<{ boardId: string }>;
 	uploadSymbol(file: Blob): Promise<{ digest: string }>;
+	readBoardShareLink(vocabularyId: string, boardId: string): Promise<ShareLink | null>;
+	createBoardShareLink(vocabularyId: string, boardId: string): Promise<ShareLink>;
+	revokeBoardShareLink(vocabularyId: string, boardId: string): Promise<void>;
 };
 
 function managedReader(accessToken: string): VocabularyReader {
@@ -105,12 +109,36 @@ export function managedVocabularySource(auth: AuthState): VocabularySource {
 					})
 				}
 			),
-		uploadSymbol: (file) => uploadSymbol(file, accessToken)
+		uploadSymbol: (file) => uploadSymbol(file, accessToken),
+		readBoardShareLink: async (vocabularyId, boardId) =>
+			(
+				await apiFetch<{ shareLink: ShareLink | null }>(
+					`/vocabularies/${vocabularyId}/boards/${boardId}/share-link`,
+					{ accessToken }
+				)
+			).shareLink,
+		createBoardShareLink: async (vocabularyId, boardId) =>
+			(
+				await apiFetch<{ shareLink: ShareLink }>(
+					`/vocabularies/${vocabularyId}/boards/${boardId}/share-link`,
+					{ method: 'POST', accessToken }
+				)
+			).shareLink,
+		revokeBoardShareLink: async (vocabularyId, boardId) => {
+			await apiFetch(`/vocabularies/${vocabularyId}/boards/${boardId}/share-link`, {
+				method: 'DELETE',
+				accessToken
+			});
+		}
 	};
 }
 
 export type SharedVocabulary = {
-	share: { kind: 'vocabulary'; vocabulary: Vocabulary };
+	share: {
+		kind: 'vocabulary' | 'board';
+		vocabulary: Vocabulary;
+		board: Board | null;
+	};
 	content: VocabularyContent;
 };
 
@@ -131,6 +159,9 @@ export function sharedVocabularySource(content: VocabularyContent): VocabularySo
 		loadSuggestedChangeSets: async () => [],
 		listCopyDestinations: async () => [],
 		copyBoard: refused,
-		uploadSymbol: refused
+		uploadSymbol: refused,
+		readBoardShareLink: async () => null,
+		createBoardShareLink: refused,
+		revokeBoardShareLink: refused
 	};
 }

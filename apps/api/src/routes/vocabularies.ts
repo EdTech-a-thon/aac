@@ -414,6 +414,43 @@ vocabularyRoutes.delete("/:id/share-link", async (c) => {
   return c.json({ ok: true });
 });
 
+vocabularyRoutes.get("/:id/boards/:boardId/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const boardId = c.req.param("boardId");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  const { data, error } = await supabase
+    .from("share_links")
+    .select("id, token, vocabulary_id, board_id, created_at")
+    .eq("vocabulary_id", id)
+    .eq("board_id", boardId)
+    .maybeSingle();
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ shareLink: (data as ShareLink | null) ?? null });
+});
+
+vocabularyRoutes.post("/:id/boards/:boardId/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const { data, error } = await supabase.rpc("create_share_link", {
+    p_vocabulary_id: c.req.param("id"),
+    p_board_id: c.req.param("boardId"),
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ shareLink: data as ShareLink }, 201);
+});
+
+vocabularyRoutes.delete("/:id/boards/:boardId/share-link", async (c) => {
+  const supabase = c.get("supabase");
+  const { error } = await supabase.rpc("revoke_share_link", {
+    p_vocabulary_id: c.req.param("id"),
+    p_board_id: c.req.param("boardId"),
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+  return c.json({ ok: true });
+});
+
 vocabularyRoutes.get("/:id/unresolved-copy-actions", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");

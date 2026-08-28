@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Share a Vocabulary by link.
 
-**Status:** ready-for-agent
+**Status:** implemented. The exposure rules are proven by unit tests; the wiring is covered by integration tests that stay red until the Share Link migration is applied
 
 - [ ] A Manager can create and revoke a Share Link for a single Board, with the same one-live-link and permanent-revocation rules as a Vocabulary Share Link.
 - [ ] A Visitor opening a Board Share Link sees that Board's Buttons, its Snippet Inclusions flattened through the full chain of Snippets they include, and the Palette Colors those Buttons bind to.

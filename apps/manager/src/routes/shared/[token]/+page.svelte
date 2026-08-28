@@ -7,11 +7,11 @@
 		sharedVocabularySource,
 		type VocabularySource
 	} from '$lib/vocabularySource';
-	import type { Vocabulary } from '$lib/types';
+	import type { SharedVocabulary as Shared } from '$lib/vocabularySource';
 
 	const token = $derived(page.params.token ?? '');
 
-	let vocabulary = $state<Vocabulary | null>(null);
+	let shared = $state<Shared['share'] | null>(null);
 	let source = $state<VocabularySource | null>(null);
 	let loading = $state(true);
 	let unavailable = $state(false);
@@ -21,6 +21,11 @@
 	// it with what they are looking at.
 	const signedIn = $derived(readAuth() != null);
 
+	// A Board Share Link is named by its Board; a Vocabulary link by the Vocabulary.
+	const title = $derived(
+		shared ? (shared.board ? shared.board.displayName : shared.vocabulary.displayName) : ''
+	);
+
 	$effect(() => {
 		const current = token;
 		let cancelled = false;
@@ -29,15 +34,15 @@
 
 		(async () => {
 			try {
-				const shared = await loadSharedVocabulary(current);
+				const payload = await loadSharedVocabulary(current);
 				if (cancelled) return;
-				vocabulary = shared.share.vocabulary;
-				source = sharedVocabularySource(shared.content);
+				shared = payload.share;
+				source = sharedVocabularySource(payload.content);
 			} catch {
 				if (cancelled) return;
 				// Revoked, deleted, or never real — all the same from out here.
 				unavailable = true;
-				vocabulary = null;
+				shared = null;
 				source = null;
 			} finally {
 				if (!cancelled) loading = false;
@@ -51,7 +56,7 @@
 </script>
 
 <svelte:head>
-	<title>{vocabulary ? vocabulary.displayName : 'Shared vocabulary'}</title>
+	<title>{title || 'Shared'}</title>
 </svelte:head>
 
 <div class="flex h-screen min-h-0 flex-col bg-slate-50">
@@ -64,15 +69,16 @@
 				It may have been turned off by the person who shared it. Ask them for a new link.
 			</p>
 		</div>
-	{:else if vocabulary && source}
+	{:else if shared && source}
 		<header
 			class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3"
 		>
 			<div class="min-w-0">
-				<h1 class="truncate text-base font-semibold text-slate-800">
-					{vocabulary.displayName}
-				</h1>
-				<p class="text-sm text-slate-500">Shared with you — you are not signed in to this.</p>
+				<h1 class="truncate text-base font-semibold text-slate-800">{title}</h1>
+				<p class="text-sm text-slate-500">
+					{shared.board ? 'A board shared with you' : 'A vocabulary shared with you'} — you are
+					not signed in to this.
+				</p>
 			</div>
 			{#if signedIn}
 				<a
@@ -84,7 +90,7 @@
 			{/if}
 		</header>
 		<div class="min-h-0 flex-1">
-			<BoardWorkspace vocabularyId={vocabulary.id} {source} />
+			<BoardWorkspace vocabularyId={shared.vocabulary.id} {source} />
 		</div>
 	{/if}
 </div>

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createServiceSupabaseClient } from "../supabase.ts";
 import { withDisplayName } from "../displayName.ts";
+import { scopeBoardShare } from "../shareScope.ts";
 
 /**
  * Anonymous reads through a Share Link. The token is the capability, so this
@@ -46,6 +47,17 @@ type Button = {
   updated_at: string;
 };
 
+type PaletteColor = {
+  id: string;
+  vocabulary_id: string;
+  hex: string;
+  name: string;
+  description: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type Inclusion = {
   id: string;
   host_id: string;
@@ -73,10 +85,6 @@ sharedRoutes.get("/:token", async (c) => {
     .maybeSingle();
   if (linkResult.error || !linkResult.data) return c.json(UNAVAILABLE, 404);
   const link = linkResult.data as ShareLinkRow;
-
-  // Board Share Links arrive with their own scoping rules; until those exist,
-  // a link this route cannot scope correctly exposes nothing.
-  if (link.board_id !== null) return c.json(UNAVAILABLE, 404);
 
   const vocabularyResult = await supabase
     .from("vocabularies")
@@ -124,22 +132,48 @@ sharedRoutes.get("/:token", async (c) => {
     return c.json(UNAVAILABLE, 404);
   }
 
+  let inScopeBoards = boards;
+  let inScopeButtons = (buttonsResult.data ?? []) as Button[];
+  let inScopeInclusions = (inclusionsResult.data ?? []) as Inclusion[];
+  let inScopeColors = (paletteResult.data ?? []) as PaletteColor[];
+  let sharedBoard: Grid | null = null;
+
+  if (link.board_id !== null) {
+    // A Board Share Link exposes the Board and what it needs to draw itself,
+    // never the rest of the Vocabulary. See ADR 0010.
+    const scoped = scopeBoardShare({
+      boards,
+      buttons: inScopeButtons,
+      snippetInclusions: inScopeInclusions,
+      paletteColors: inScopeColors,
+      boardId: link.board_id,
+    });
+    if (!scoped) return c.json(UNAVAILABLE, 404);
+    sharedBoard = scoped.boards.find((board) => board.id === link.board_id) ?? null;
+    if (!sharedBoard) return c.json(UNAVAILABLE, 404);
+    inScopeBoards = scoped.boards;
+    inScopeButtons = scoped.buttons;
+    inScopeInclusions = scoped.snippetInclusions;
+    inScopeColors = scoped.paletteColors;
+  }
+
   const buttonsByBoardId: Record<string, Button[]> = {};
-  for (const board of boards) buttonsByBoardId[board.id] = [];
-  for (const button of (buttonsResult.data ?? []) as Button[]) {
+  for (const board of inScopeBoards) buttonsByBoardId[board.id] = [];
+  for (const button of inScopeButtons) {
     buttonsByBoardId[button.board_id]?.push(button);
   }
 
   return c.json({
     share: {
-      kind: "vocabulary" as const,
+      kind: sharedBoard ? ("board" as const) : ("vocabulary" as const),
       vocabulary: withDisplayName(vocabularyResult.data as { id: string; name: string }),
+      board: sharedBoard ? withDisplayName(sharedBoard) : null,
     },
     content: {
-      boards: boards.map(withDisplayName),
+      boards: inScopeBoards.map(withDisplayName),
       buttonsByBoardId,
-      paletteColors: paletteResult.data ?? [],
-      snippetInclusions: (inclusionsResult.data ?? []) as Inclusion[],
+      paletteColors: inScopeColors,
+      snippetInclusions: inScopeInclusions,
       // Unresolved Copy Actions are a Manager-only warning and are never
       // visible through a Share Link.
       unresolvedCopyActions: [],

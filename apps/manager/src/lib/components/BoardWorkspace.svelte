@@ -35,6 +35,7 @@
 		visibleVocabularySnapshot
 	} from '$lib/vocabularyEditorSession';
 	import type { VocabularySource } from '$lib/vocabularySource';
+	import type { ShareLink } from '$lib/types';
 
 	let {
 		vocabularyId,
@@ -747,6 +748,72 @@
 	function openDelete() {
 		deleteError = null;
 		deleteOpen = true;
+	}
+
+	let boardShareOpen = $state(false);
+	let boardShareLink = $state<ShareLink | null>(null);
+	let boardShareBusy = $state(false);
+	let boardShareCopied = $state(false);
+	let boardShareError = $state<string | null>(null);
+	const boardShareUrl = $derived(
+		boardShareLink && typeof window !== 'undefined'
+			? `${window.location.origin}/shared/${boardShareLink.token}`
+			: ''
+	);
+
+	async function openBoardShare() {
+		if (!selectedBoard || isSnippet(selectedBoard) || !source.canWrite) return;
+		boardShareOpen = true;
+		boardShareError = null;
+		boardShareCopied = false;
+		boardShareLink = null;
+		boardShareBusy = true;
+		try {
+			boardShareLink = await source.readBoardShareLink(vocabularyId, selectedBoard.id);
+		} catch (err) {
+			boardShareError = err instanceof Error ? err.message : 'Failed to read the link';
+		} finally {
+			boardShareBusy = false;
+		}
+	}
+
+	async function createBoardShare() {
+		if (!selectedBoard || boardShareBusy) return;
+		boardShareBusy = true;
+		boardShareError = null;
+		try {
+			boardShareLink = await source.createBoardShareLink(vocabularyId, selectedBoard.id);
+			boardShareCopied = false;
+		} catch (err) {
+			boardShareError = err instanceof Error ? err.message : 'Failed to create a link';
+		} finally {
+			boardShareBusy = false;
+		}
+	}
+
+	async function revokeBoardShare() {
+		if (!selectedBoard || boardShareBusy) return;
+		boardShareBusy = true;
+		boardShareError = null;
+		try {
+			await source.revokeBoardShareLink(vocabularyId, selectedBoard.id);
+			boardShareLink = null;
+			boardShareCopied = false;
+		} catch (err) {
+			boardShareError = err instanceof Error ? err.message : 'Failed to turn off the link';
+		} finally {
+			boardShareBusy = false;
+		}
+	}
+
+	async function copyBoardShareUrl() {
+		if (!boardShareUrl) return;
+		try {
+			await navigator.clipboard.writeText(boardShareUrl);
+			boardShareCopied = true;
+		} catch {
+			boardShareError = 'Could not copy the link — select it and copy manually.';
+		}
 	}
 
 	async function openCopy() {
@@ -1584,6 +1651,11 @@
 							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
 							onclick={() => { close(); openCopy(); }}
 						>Copy board</button>
+						<button
+							type="button"
+							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+							onclick={() => { close(); openBoardShare(); }}
+						>Share board…</button>
 					{/if}
 					<button
 						type="button"
@@ -2243,6 +2315,54 @@
 			Create
 		</button>
 	{/snippet}
+</Modal>
+
+<Modal bind:open={boardShareOpen} title="Share board">
+	<div class="space-y-3">
+		<p class="text-sm text-slate-600">
+			Anyone with the link can see this board and the snippets it uses — not the rest of
+			the vocabulary. Buttons that open another board do nothing for them.
+		</p>
+		{#if boardShareError}
+			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{boardShareError}</p>
+		{/if}
+		{#if boardShareBusy && !boardShareLink}
+			<p class="text-sm text-slate-500">Loading…</p>
+		{:else if boardShareLink}
+			<div class="flex flex-wrap items-center gap-2">
+				<input
+					class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 outline-none"
+					type="text"
+					readonly
+					value={boardShareUrl}
+				/>
+				<button
+					type="button"
+					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+					onclick={copyBoardShareUrl}
+				>
+					{boardShareCopied ? 'Copied' : 'Copy'}
+				</button>
+				<button
+					type="button"
+					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={boardShareBusy}
+					onclick={revokeBoardShare}
+				>
+					{boardShareBusy ? 'Turning off…' : 'Turn off'}
+				</button>
+			</div>
+		{:else}
+			<button
+				type="button"
+				class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+				disabled={boardShareBusy}
+				onclick={createBoardShare}
+			>
+				{boardShareBusy ? 'Creating…' : 'Create a public link'}
+			</button>
+		{/if}
+	</div>
 </Modal>
 
 <Modal bind:open={copyOpen} title="Copy board">
