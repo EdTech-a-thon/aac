@@ -8,6 +8,7 @@
 		type DeleteResolution
 	} from '$lib/components/DeletePaletteColorModal.svelte';
 	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
+	import PublishToGallery from '$lib/components/PublishToGallery.svelte';
 	import {
 		getVocabularyEditorSession,
 		persistEditorSession,
@@ -352,6 +353,13 @@
 				{/if}
 			</div>
 		</div>
+	</section>
+
+	<section class="max-w-4xl space-y-3">
+		<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Gallery</h2>
+		{#if dashboard.auth}
+			<PublishToGallery {vocabularyId} auth={dashboard.auth} />
+		{/if}
 	</section>
 
 	<section class="max-w-4xl space-y-3">

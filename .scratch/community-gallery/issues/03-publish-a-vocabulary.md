@@ -14,18 +14,18 @@ This is the heaviest ticket in the set. If it will not fit one context, split th
 
 **Blocked by:** 01 — Give a Vocabulary a description.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A Manager can publish a Vocabulary and is given its public URL.
-- [ ] Publishing is refused, with a reason, when the name is blank, the description is blank, or the Vocabulary has no Boards.
-- [ ] A Vocabulary with Unresolved Copy Actions can still be published, and the Manager is warned before confirming.
-- [ ] The publish flow shows every distinct Symbol used in the Vocabulary, and shows it above the confirmations.
-- [ ] Publishing is refused unless all three confirmations are made, and each is stored separately with the confirming User, the time, and the identifier of the exact wording shown.
-- [ ] Consent wordings are stored as immutable records, so the wording a past Attestation refers to can always be recovered.
-- [ ] The captured version reproduces the Vocabulary's visible state at publish: Boards, Snippets, Buttons, Snippet Inclusions, and Palette, with Buttons keeping their Palette Color bindings, custom hexes, Actions, and Symbols.
-- [ ] Board count, button count, and the range of Board grid sizes are computed once at publish and stored on the version; Snippets are excluded from the board count.
-- [ ] Editing the Vocabulary after publishing — including its name, description, Boards, or Palette — changes nothing at the public URL.
-- [ ] A signed-out person can open the public URL and read the published version.
-- [ ] The slug is human-readable, derived from the name at first publish, and unique across Publications.
-- [ ] A non-Manager cannot publish a Vocabulary, and the public route exposes no Vocabulary that has no published Publication.
-- [ ] Anonymous reads go through the API with the service role; `anon` receives no new table grants.
+- [x] A Manager can publish a Vocabulary and is given its public URL.
+- [x] Publishing is refused, with a reason, when the name is blank, the description is blank, or the Vocabulary has no Boards.
+- [x] A Vocabulary with Unresolved Copy Actions can still be published, and the Manager is warned before confirming.
+- [x] The publish flow shows every distinct Symbol used in the Vocabulary, and shows it above the confirmations.
+- [x] Publishing is refused unless all three confirmations are made, and each is stored separately with the confirming User, the time, and the identifier of the exact wording shown.
+- [x] Consent wordings are stored as immutable records, so the wording a past Attestation refers to can always be recovered.
+- [x] The captured version reproduces the Vocabulary's visible state at publish: Boards, Snippets, Buttons, Snippet Inclusions, and Palette, with Buttons keeping their Palette Color bindings, custom hexes, Actions, and Symbols.
+- [x] Board count, button count, and the range of Board grid sizes are computed once at publish and stored on the version; Snippets are excluded from the board count.
+- [x] Editing the Vocabulary after publishing — including its name, description, Boards, or Palette — changes nothing at the public URL.
+- [x] A signed-out person can open the public URL and read the published version.
+- [x] The slug is human-readable, derived from the name at first publish, and unique across Publications.
+- [x] A non-Manager cannot publish a Vocabulary, and the public route exposes no Vocabulary that has no published Publication.
+- [x] Anonymous reads go through the API with the service role; `anon` receives no new table grants.

@@ -200,6 +200,54 @@ export function saveSharedBoard(
 	});
 }
 
+export type PublicationFigures = {
+	boardCount: number;
+	buttonCount: number;
+	minColumns: number;
+	minRows: number;
+	maxColumns: number;
+	maxRows: number;
+};
+
+export type GalleryPublication = {
+	publication: {
+		slug: string;
+		title: string;
+		description: string;
+		attribution: string;
+		versionId: string;
+		seq: number;
+		publishedAt: string;
+		figures: PublicationFigures;
+	};
+	content: VocabularyContent;
+};
+
+export type GalleryListing = {
+	slug: string;
+	title: string;
+	description: string;
+	attribution: string;
+	publishedAt: string;
+	figures: PublicationFigures;
+};
+
+/** Browse the Gallery. Anonymous, and nothing is recorded by looking. */
+export async function loadGallery(query: string): Promise<GalleryListing[]> {
+	const suffix = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+	const data = await apiFetch<{ publications: GalleryListing[] }>(`/gallery${suffix}`);
+	return data.publications;
+}
+
+/**
+ * Open a Publication on the Gallery. Everything returned comes from a frozen
+ * Publication Version, so this shows what was published rather than what the
+ * source Vocabulary has since become.
+ */
+export function loadPublication(slug: string): Promise<GalleryPublication> {
+	return apiFetch<GalleryPublication>(`/gallery/${slug}`);
+}
+
 /** The Vocabularies a signed-in saver could keep a shared Board in. */
 export async function listOwnVocabularies(accessToken: string): Promise<Vocabulary[]> {
 	return (await apiFetch<{ vocabularies: Vocabulary[] }>('/vocabularies', { accessToken }))

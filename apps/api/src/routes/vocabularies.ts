@@ -6,6 +6,8 @@ import {
   remapVocabularySnapshot,
   type VocabularyCopySnapshot,
 } from "../copyVocabulary.ts";
+import { loadFullVocabularySnapshot } from "../vocabularySnapshot.ts";
+import { publicationFigures, snapshotSymbolDigests } from "../publicationFigures.ts";
 
 type Vocabulary = {
   id: string;
@@ -1093,4 +1095,162 @@ vocabularyRoutes.delete("/:id/managers/:userId", async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+type PublicationRow = {
+  id: string;
+  vocabulary_id: string;
+  slug: string;
+  published: boolean;
+  current_version_id: string | null;
+  created_at: string;
+};
+
+type PublicationVersionRow = {
+  id: string;
+  publication_id: string;
+  seq: number;
+  name: string;
+  description: string;
+  attribution: string;
+  board_count: number;
+  button_count: number;
+  min_columns: number;
+  min_rows: number;
+  max_columns: number;
+  max_rows: number;
+  created_at: string;
+};
+
+const PUBLICATION_COLUMNS =
+  "id, vocabulary_id, slug, published, current_version_id, created_at";
+const PUBLICATION_VERSION_COLUMNS =
+  "id, publication_id, seq, name, description, attribution, board_count, button_count, min_columns, min_rows, max_columns, max_rows, created_at";
+
+/**
+ * Everything the publish flow needs in one read: what is already published, the
+ * exact wordings the Manager will be asked to confirm, the Symbols they are
+ * about to make public, and whatever stands in the way of publishing at all.
+ */
+vocabularyRoutes.get("/:id/publication", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  const [vocabularyResult, publicationResult, consentResult, loaded, unresolvedResult] =
+    await Promise.all([
+      supabase.from("vocabularies").select("id, name, description").eq("id", id).maybeSingle(),
+      supabase.from("publications").select(PUBLICATION_COLUMNS).eq("vocabulary_id", id).maybeSingle(),
+      supabase.from("consent_texts").select("id, clause, wording"),
+      loadFullVocabularySnapshot(supabase, id),
+      supabase.from("unresolved_copy_actions").select("id").eq("vocabulary_id", id),
+    ]);
+
+  if (vocabularyResult.error) return c.json({ error: pgErrorMessage(vocabularyResult.error) }, 400);
+  if (!vocabularyResult.data) return c.json({ error: "Vocabulary not found" }, 404);
+  if (publicationResult.error) {
+    return c.json({ error: pgErrorMessage(publicationResult.error) }, 400);
+  }
+  if (consentResult.error) return c.json({ error: pgErrorMessage(consentResult.error) }, 400);
+  if (!loaded.snapshot) return c.json({ error: loaded.error ?? "Could not read Vocabulary" }, 400);
+
+  const vocabulary = vocabularyResult.data as { id: string; name: string; description: string };
+  const publication = (publicationResult.data ?? null) as PublicationRow | null;
+  const figures = publicationFigures(loaded.snapshot);
+
+  let currentVersion: PublicationVersionRow | null = null;
+  if (publication?.current_version_id) {
+    const versionResult = await supabase
+      .from("publication_versions")
+      .select(PUBLICATION_VERSION_COLUMNS)
+      .eq("id", publication.current_version_id)
+      .maybeSingle();
+    currentVersion = (versionResult.data ?? null) as PublicationVersionRow | null;
+  }
+
+  // Blank name, blank description, and no Boards are the difference between a
+  // listing and litter, so they stop a publish outright.
+  const problems: string[] = [];
+  if (!vocabulary.name.trim()) problems.push("Give this Vocabulary a name before publishing it.");
+  if (!vocabulary.description.trim()) {
+    problems.push("Add a description so people can tell what this is for.");
+  }
+  if (figures.board_count < 1) problems.push("A published Vocabulary needs at least one Board.");
+
+  return c.json({
+    publication: publication
+      ? {
+          slug: publication.slug,
+          published: publication.published,
+          createdAt: publication.created_at,
+          currentVersion,
+        }
+      : null,
+    consentTexts: consentResult.data ?? [],
+    preflight: {
+      name: vocabulary.name,
+      description: vocabulary.description,
+      figures,
+      symbolDigests: snapshotSymbolDigests(loaded.snapshot),
+      problems,
+      // An Unresolved Copy Action is a Manager-only warning, invisible in the
+      // AAC app, so it does not block — but dead navigation is a poor first
+      // impression and this is the last moment to notice.
+      unresolvedCopyActionCount: (unresolvedResult.data ?? []).length,
+    },
+  });
+});
+
+/**
+ * Publish, or publish again. The snapshot and its figures are taken here from
+ * the live Vocabulary rather than accepted from the browser: a Publication
+ * Version is a claim about content, and the server is the only thing that can
+ * honestly say what that content was.
+ */
+vocabularyRoutes.post("/:id/publish", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  type PublishBody = {
+    attribution?: string;
+    confirmations?: { clause?: string; consentTextId?: string }[];
+  };
+  const body = await c.req.json<PublishBody>().catch((): PublishBody => ({}));
+
+  const confirmations = Array.isArray(body.confirmations) ? body.confirmations : [];
+  const consent = confirmations
+    .filter((entry) => typeof entry.clause === "string" && typeof entry.consentTextId === "string")
+    .map((entry) => ({ clause: entry.clause, consent_text_id: entry.consentTextId }));
+
+  const loaded = await loadFullVocabularySnapshot(supabase, id);
+  if (!loaded.snapshot) return c.json({ error: loaded.error ?? "Could not read Vocabulary" }, 400);
+
+  const { data, error } = await supabase.rpc("publish_vocabulary", {
+    p_vocabulary_id: id,
+    p_attribution: typeof body.attribution === "string" ? body.attribution : "",
+    p_snapshot: loaded.snapshot,
+    p_figures: publicationFigures(loaded.snapshot),
+    p_consent: consent,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+
+  const publicationResult = await supabase
+    .from("publications")
+    .select(PUBLICATION_COLUMNS)
+    .eq("vocabulary_id", id)
+    .maybeSingle();
+  const publication = (publicationResult.data ?? null) as PublicationRow | null;
+
+  return c.json(
+    {
+      publication: publication
+        ? { slug: publication.slug, published: publication.published }
+        : null,
+      version: data as PublicationVersionRow,
+    },
+    201,
+  );
 });

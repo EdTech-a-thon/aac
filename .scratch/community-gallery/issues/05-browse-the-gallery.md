@@ -10,14 +10,14 @@ Withdrawn Publications do not appear and their listings are not reachable. No vi
 
 **Blocked by:** 03 — Publish a Vocabulary to the Gallery.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A signed-out person can browse the Gallery and open any listing.
-- [ ] Each listing shows title, description, attribution, board count, button count, and grid size range, the range collapsing to one value when every Board is the same size.
-- [ ] Snippet count is not shown.
-- [ ] Listings are ordered newest first.
-- [ ] Substring search matches titles and descriptions and is case-insensitive.
-- [ ] A search matching nothing says so rather than showing an empty page.
-- [ ] Withdrawn Publications appear nowhere in the Gallery and their pages are not reachable.
-- [ ] The Gallery reads only published version data — no query touches live Vocabulary tables.
-- [ ] Nothing is recorded when a listing is viewed.
+- [x] A signed-out person can browse the Gallery and open any listing.
+- [x] Each listing shows title, description, attribution, board count, button count, and grid size range, the range collapsing to one value when every Board is the same size.
+- [x] Snippet count is not shown.
+- [x] Listings are ordered newest first.
+- [x] Substring search matches titles and descriptions and is case-insensitive.
+- [x] A search matching nothing says so rather than showing an empty page.
+- [x] Withdrawn Publications appear nowhere in the Gallery and their pages are not reachable.
+- [x] The Gallery reads only published version data — no query touches live Vocabulary tables.
+- [x] Nothing is recorded when a listing is viewed.
