@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
+import { createServiceSupabaseClient } from "../supabase.ts";
 import { displayName, withDisplayName } from "../displayName.ts";
 import {
   prepareBoardCopy,
   remapVocabularySnapshot,
   type VocabularyCopySnapshot,
 } from "../copyVocabulary.ts";
-import { loadFullVocabularySnapshot } from "../vocabularySnapshot.ts";
+import { loadFullVocabularySnapshot, snapshotFingerprint } from "../vocabularySnapshot.ts";
 import { publicationFigures, snapshotSymbolDigests } from "../publicationFigures.ts";
 
 type Vocabulary = {
@@ -491,7 +492,7 @@ vocabularyRoutes.get("/:id", async (c) => {
 
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, description, created_at, updated_at")
+    .select("id, name, description, created_at, updated_at, origin_publication_version_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -503,8 +504,46 @@ vocabularyRoutes.get("/:id", async (c) => {
     return c.json({ error: "Vocabulary not found" }, 404);
   }
 
+  const { origin_publication_version_id: originId, ...vocabulary } = data as Vocabulary & {
+    origin_publication_version_id: string | null;
+  };
+
+  // Where a copy came from, shown only to its own Managers — this route is
+  // already Manager-scoped by RLS. A dead reference: it never updates the copy,
+  // and it stops resolving once the Publication is withdrawn or deleted, which
+  // leaves the copy itself entirely intact.
+  //
+  // Read with the service role rather than the caller's client: the copier does
+  // not manage the source Vocabulary, so RLS rightly hides its Publication from
+  // them. Nothing is disclosed that the Gallery does not already show anyone.
+  let origin: { slug: string; title: string; seq: number } | null = null;
+  if (originId) {
+    const service = createServiceSupabaseClient();
+    const versionResult = await service
+      .from("publication_versions")
+      .select("seq, name, publication_id")
+      .eq("id", originId)
+      .maybeSingle();
+    const version = versionResult.data as
+      | { seq: number; name: string; publication_id: string }
+      | null;
+    if (version) {
+      const publicationResult = await service
+        .from("publications")
+        .select("slug, published")
+        .eq("id", version.publication_id)
+        .maybeSingle();
+      const source = publicationResult.data as { slug: string; published: boolean } | null;
+      // A withdrawn Publication stops resolving, leaving the copy untouched.
+      if (source?.published) {
+        origin = { slug: source.slug, title: version.name, seq: version.seq };
+      }
+    }
+  }
+
   return c.json({
-    vocabulary: withDisplayName(data as Vocabulary),
+    vocabulary: withDisplayName(vocabulary as Vocabulary),
+    origin,
   });
 });
 
@@ -1160,13 +1199,39 @@ vocabularyRoutes.get("/:id/publication", async (c) => {
   const figures = publicationFigures(loaded.snapshot);
 
   let currentVersion: PublicationVersionRow | null = null;
+  let drifted = false;
+  let copyCount = 0;
   if (publication?.current_version_id) {
-    const versionResult = await supabase
-      .from("publication_versions")
-      .select(PUBLICATION_VERSION_COLUMNS)
-      .eq("id", publication.current_version_id)
-      .maybeSingle();
-    currentVersion = (versionResult.data ?? null) as PublicationVersionRow | null;
+    const [versionResult, copiesResult] = await Promise.all([
+      supabase
+        .from("publication_versions")
+        .select(`${PUBLICATION_VERSION_COLUMNS}, snapshot`)
+        .eq("id", publication.current_version_id)
+        .maybeSingle(),
+      // Read with the service role: Copies are readable by nobody through RLS,
+      // because who copied is operator-only. The publisher gets the count and
+      // never the identities (ADR 0014).
+      createServiceSupabaseClient()
+        .from("publication_copies")
+        .select("id", { count: "exact", head: true })
+        .eq("publication_id", publication.id),
+    ]);
+    const version = versionResult.data as
+      | (PublicationVersionRow & { snapshot: Parameters<typeof snapshotFingerprint>[0] })
+      | null;
+    copyCount = copiesResult.count ?? 0;
+
+    if (version) {
+      const { snapshot: _stored, ...withoutSnapshot } = version;
+      currentVersion = withoutSnapshot;
+      // A published version is frozen, so a Vocabulary edited since has drifted
+      // from what the public sees. Name and description count, because they are
+      // captured at publish too.
+      drifted =
+        version.name !== vocabulary.name ||
+        version.description !== vocabulary.description ||
+        snapshotFingerprint(version.snapshot) !== snapshotFingerprint(loaded.snapshot);
+    }
   }
 
   // Blank name, blank description, and no Boards are the difference between a
@@ -1185,6 +1250,8 @@ vocabularyRoutes.get("/:id/publication", async (c) => {
           published: publication.published,
           createdAt: publication.created_at,
           currentVersion,
+          drifted,
+          copyCount,
         }
       : null,
     consentTexts: consentResult.data ?? [],
@@ -1253,4 +1320,27 @@ vocabularyRoutes.post("/:id/publish", async (c) => {
     },
     201,
   );
+});
+
+/**
+ * Take a Publication off the Gallery. Withdrawal delists without deleting: its
+ * versions, Attestations, Endorsements, Copies, and Reports all survive, and
+ * publishing this Vocabulary again resumes the same Publication with its slug
+ * and its Endorsement count intact. See ADR 0013.
+ */
+vocabularyRoutes.delete("/:id/publish", async (c) => {
+  const supabase = c.get("supabase");
+  const id = c.req.param("id");
+  const managed = await requireVocabularyManager(supabase, c.get("user").id, id);
+  if (!managed.ok) return c.json({ error: managed.error }, 404);
+
+  const { data, error } = await supabase.rpc("unpublish_vocabulary", {
+    p_vocabulary_id: id,
+  });
+  if (error) return c.json({ error: pgErrorMessage(error) }, 400);
+
+  const publication = data as PublicationRow;
+  return c.json({
+    publication: { slug: publication.slug, published: publication.published },
+  });
 });

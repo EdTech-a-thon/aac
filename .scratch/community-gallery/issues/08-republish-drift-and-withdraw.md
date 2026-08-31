@@ -12,15 +12,15 @@ There is no rollback: the Gallery shows only the current version, and a version 
 
 **Blocked by:** 03 — Publish a Vocabulary to the Gallery.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A Manager can publish an already-published Vocabulary again, minting a new version that becomes what the public URL and Gallery show.
-- [ ] Republishing requires a fresh Attestation and is refused without all three confirmations.
-- [ ] Earlier versions remain stored and still resolve as the origin of Copies taken from them.
-- [ ] The slug does not change on republishing, including when the Vocabulary has been renamed.
-- [ ] The manager app shows when a published Vocabulary has drifted from its current version, including drift caused only by a changed name or description.
-- [ ] A Vocabulary that has not changed since publishing is not reported as drifted.
-- [ ] Any Manager can withdraw a Publication, after which its Gallery entry and public URL are both dead.
-- [ ] Withdrawing deletes nothing: versions, Attestations, Endorsements, Copies, and Reports all survive.
-- [ ] Publishing a withdrawn Publication's Vocabulary again resumes the same Publication, keeping its slug and its Endorsement count.
-- [ ] Copies taken before a withdrawal are unaffected by it.
+- [x] A Manager can publish an already-published Vocabulary again, minting a new version that becomes what the public URL and Gallery show.
+- [x] Republishing requires a fresh Attestation and is refused without all three confirmations.
+- [x] Earlier versions remain stored and still resolve as the origin of Copies taken from them.
+- [x] The slug does not change on republishing, including when the Vocabulary has been renamed.
+- [x] The manager app shows when a published Vocabulary has drifted from its current version, including drift caused only by a changed name or description.
+- [x] A Vocabulary that has not changed since publishing is not reported as drifted.
+- [x] Any Manager can withdraw a Publication, after which its Gallery entry and public URL are both dead.
+- [x] Withdrawing deletes nothing: versions, Attestations, Endorsements, Copies, and Reports all survive.
+- [x] Publishing a withdrawn Publication's Vocabulary again resumes the same Publication, keeping its slug and its Endorsement count.
+- [x] Copies taken before a withdrawal are unaffected by it.

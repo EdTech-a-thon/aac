@@ -10,15 +10,15 @@ A Visitor who has made local edits before signing in keeps what they see, exactl
 
 **Blocked by:** 04 — Preview a published Vocabulary as a Visitor.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Someone previewing a Publication can sign in and keep it as a new Vocabulary they solely manage.
-- [ ] Local edits made before signing in are carried into the copy.
-- [ ] The copy is independent: later versions of the Publication, its withdrawal, or deletion of the source Vocabulary leave it untouched.
-- [ ] Exactly one Copy is recorded per resulting Vocabulary, on completion, naming the Publication, the version, the User, and the time.
-- [ ] A failed copy records no Copy.
-- [ ] The same User copying twice produces two Vocabularies and two Copy records.
-- [ ] The copy records the Publication Version it came from, shown only to its own Managers.
-- [ ] That origin never updates the copy, and resolves to nothing once the Publication is withdrawn or its source Vocabulary deleted, leaving the copy intact.
-- [ ] A Publication's Managers see their aggregate copy count; nobody sees who copied, including them.
-- [ ] The copy count appears nowhere public and does not affect Gallery ordering.
+- [x] Someone previewing a Publication can sign in and keep it as a new Vocabulary they solely manage.
+- [x] Local edits made before signing in are carried into the copy.
+- [x] The copy is independent: later versions of the Publication, its withdrawal, or deletion of the source Vocabulary leave it untouched.
+- [x] Exactly one Copy is recorded per resulting Vocabulary, on completion, naming the Publication, the version, the User, and the time.
+- [x] A failed copy records no Copy.
+- [x] The same User copying twice produces two Vocabularies and two Copy records.
+- [x] The copy records the Publication Version it came from, shown only to its own Managers.
+- [x] That origin never updates the copy, and resolves to nothing once the Publication is withdrawn or its source Vocabulary deleted, leaving the copy intact.
+- [x] A Publication's Managers see their aggregate copy count; nobody sees who copied, including them.
+- [x] The copy count appears nowhere public and does not affect Gallery ordering.

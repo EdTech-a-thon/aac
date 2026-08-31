@@ -12,15 +12,26 @@ Reports do not withdraw a Publication. Acting on one is a manual operator matter
 
 **Blocked by:** 03 — Publish a Vocabulary to the Gallery.
 
-**Status:** ready-for-agent
+**Status:** in-review
 
-- [ ] Anyone, signed in or not, can report a Publication from its page, and a signed-in reporter is recorded as such.
-- [ ] A reason is required; a report with a blank reason is refused.
-- [ ] Every accepted report is stored, and it is stored even when sending mail fails.
+- [x] Anyone, signed in or not, can report a Publication from its page, and a signed-in reporter is recorded as such.
+- [x] A reason is required; a report with a blank reason is refused.
+- [x] Every accepted report is stored, and it is stored even when sending mail fails.
 - [ ] A report sends an email only when none has been sent in the last hour.
 - [ ] The email covers every Report not yet notified, not only the triggering one.
 - [ ] Reports suppressed by the throttle are included in the next email that goes out.
 - [ ] Two reports arriving at once produce at most one email, and neither report is lost.
 - [ ] A failed send leaves its Reports un-notified so the next attempt picks them up.
-- [ ] With no Cloudflare configuration present, reports are still stored and the send is a logged no-op.
-- [ ] Reporting changes nothing about the Publication: it stays listed and reachable.
+- [x] With no Cloudflare configuration present, reports are still stored and the send is a logged no-op.
+- [x] Reporting changes nothing about the Publication: it stays listed and reachable.
+
+## Comments
+
+The throttle and catch-up are implemented and covered by
+`apps/api/src/test/reportThrottle.test.ts`, which cannot run until
+`supabase/migrations/20260831150000_claim_report_notifications.sql` is applied.
+Claiming has to be one indivisible step or two simultaneous Reports each see an
+empty last hour and both send, so it lives in a database function behind a
+transaction-scoped advisory lock rather than in the API.
+
+Report storage itself does not depend on that migration and is verified.

@@ -123,3 +123,51 @@ export async function loadFullVocabularySnapshot(
     },
   };
 }
+
+/**
+ * A stable string standing for a snapshot's content.
+ *
+ * Used to tell whether a published Vocabulary has drifted from the version the
+ * Gallery is showing. Only content-bearing fields go in: timestamps and the
+ * owning Vocabulary id are left out, because a Board that was touched and put
+ * back is not a change anyone would want to be told about.
+ */
+export function snapshotFingerprint(snapshot: FullVocabularySnapshot): string {
+  const byId = <T extends { id: string }>(rows: T[]) =>
+    [...rows].sort((a, b) => a.id.localeCompare(b.id));
+
+  return JSON.stringify({
+    boards: byId(snapshot.boards).map((grid) => [
+      grid.id,
+      grid.name,
+      grid.width,
+      grid.height,
+      grid.kind,
+    ]),
+    buttons: byId(snapshot.buttons).map((button) => [
+      button.id,
+      button.board_id,
+      button.row_index,
+      button.col_index,
+      button.label,
+      button.background_color,
+      button.palette_color_id,
+      button.action ? JSON.stringify(button.action) : null,
+      button.symbol_digest,
+    ]),
+    paletteColors: byId(snapshot.palette_colors).map((color) => [
+      color.id,
+      color.hex,
+      color.name,
+      color.description,
+      color.position,
+    ]),
+    inclusions: byId(snapshot.snippet_inclusions).map((inclusion) => [
+      inclusion.id,
+      inclusion.host_id,
+      inclusion.snippet_id,
+      inclusion.origin_row,
+      inclusion.origin_col,
+    ]),
+  });
+}

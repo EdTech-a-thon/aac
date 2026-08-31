@@ -212,6 +212,8 @@ export type PublicationFigures = {
 export type GalleryPublication = {
 	publication: {
 		slug: string;
+		endorsementCount: number;
+		youEndorsed: boolean;
 		title: string;
 		description: string;
 		attribution: string;
@@ -225,6 +227,7 @@ export type GalleryPublication = {
 
 export type GalleryListing = {
 	slug: string;
+	endorsementCount: number;
 	title: string;
 	description: string;
 	attribution: string;
@@ -233,9 +236,14 @@ export type GalleryListing = {
 };
 
 /** Browse the Gallery. Anonymous, and nothing is recorded by looking. */
-export async function loadGallery(query: string): Promise<GalleryListing[]> {
-	const suffix = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
-	const data = await apiFetch<{ publications: GalleryListing[] }>(`/gallery${suffix}`);
+export async function loadGallery(
+	query: string,
+	sort: 'endorsed' | 'newest' = 'endorsed'
+): Promise<GalleryListing[]> {
+	const params = new URLSearchParams();
+	if (query.trim()) params.set('q', query.trim());
+	params.set('sort', sort);
+	const data = await apiFetch<{ publications: GalleryListing[] }>(`/gallery?${params}`);
 	return data.publications;
 }
 
@@ -244,8 +252,50 @@ export async function loadGallery(query: string): Promise<GalleryListing[]> {
  * Publication Version, so this shows what was published rather than what the
  * source Vocabulary has since become.
  */
-export function loadPublication(slug: string): Promise<GalleryPublication> {
-	return apiFetch<GalleryPublication>(`/gallery/${slug}`);
+export function loadPublication(slug: string, accessToken?: string): Promise<GalleryPublication> {
+	return apiFetch<GalleryPublication>(`/gallery/${slug}`, { accessToken });
+}
+
+/** Endorse a Publication, or withdraw it. The standing count comes back with it. */
+export function setEndorsement(
+	slug: string,
+	standing: boolean,
+	accessToken: string
+): Promise<{ standing: boolean; count: number }> {
+	return apiFetch(`/gallery/${slug}/endorsement`, {
+		method: 'POST',
+		accessToken,
+		body: JSON.stringify({ standing })
+	});
+}
+
+/**
+ * Keep a Publication as a Vocabulary of your own. The snapshot is what the
+ * Visitor can see, their own local edits folded in.
+ */
+export function copyPublication(
+	slug: string,
+	accessToken: string,
+	body: { name?: string; snapshot?: unknown }
+): Promise<{ vocabulary: Vocabulary }> {
+	return apiFetch(`/gallery/${slug}/copy`, {
+		method: 'POST',
+		accessToken,
+		body: JSON.stringify(body)
+	});
+}
+
+/** Report a Publication. Signing in is optional; a reason is not. */
+export function reportPublication(
+	slug: string,
+	reason: string,
+	accessToken?: string
+): Promise<{ reported: boolean }> {
+	return apiFetch(`/gallery/${slug}/reports`, {
+		method: 'POST',
+		accessToken,
+		body: JSON.stringify({ reason })
+	});
 }
 
 /** The Vocabularies a signed-in saver could keep a shared Board in. */

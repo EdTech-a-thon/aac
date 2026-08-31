@@ -33,3 +33,28 @@ export const requireAuth = createMiddleware<{ Variables: AuthVariables }>(
     await next();
   },
 );
+
+/**
+ * Who is calling, when that may be nobody.
+ *
+ * The Gallery is anonymous but not indifferent to identity: a signed-in visitor
+ * sees whether they have already endorsed, and a Report names its reporter when
+ * there is one. A bad or expired token is treated as no token rather than as an
+ * error, because nothing here needs an account.
+ */
+export async function optionalUserId(
+  authorization: string | undefined,
+): Promise<string | null> {
+  if (!authorization?.startsWith("Bearer ")) return null;
+  const accessToken = authorization.slice("Bearer ".length).trim();
+  if (!accessToken) return null;
+
+  try {
+    const supabase = createUserSupabaseClient(accessToken);
+    const { data, error } = await supabase.auth.getUser(accessToken);
+    if (error || !data.user) return null;
+    return data.user.id;
+  } catch {
+    return null;
+  }
+}

@@ -8,12 +8,12 @@ Restoring differs from the Share Link case in one way worth getting right: disca
 
 **Blocked by:** 02 — A Visitor can discard their local changes; 03 — Publish a Vocabulary to the Gallery.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A signed-out Visitor can use a published Vocabulary: press Buttons, build and clear a message, and navigate between its Boards.
-- [ ] Open Board Actions work within the published version; nothing outside it is reachable or disclosed.
-- [ ] A Visitor can make the same local edits a Share Link Visitor can, and they persist in that browser.
-- [ ] Discarding restores that Publication Version, not a live read of the source Vocabulary.
-- [ ] Local edits never reach the source Vocabulary, submit no Change Set, and are invisible to its Managers.
-- [ ] A Visitor cannot see Suggested Change Sets, Applied history, Unresolved Copy Actions, Managers, or Communicators.
-- [ ] The Visitor experience is the same whether reached from a Share Link or a Publication, apart from what discarding restores.
+- [x] A signed-out Visitor can use a published Vocabulary: press Buttons, build and clear a message, and navigate between its Boards.
+- [x] Open Board Actions work within the published version; nothing outside it is reachable or disclosed.
+- [x] A Visitor can make the same local edits a Share Link Visitor can, and they persist in that browser.
+- [x] Discarding restores that Publication Version, not a live read of the source Vocabulary.
+- [x] Local edits never reach the source Vocabulary, submit no Change Set, and are invisible to its Managers.
+- [x] A Visitor cannot see Suggested Change Sets, Applied history, Unresolved Copy Actions, Managers, or Communicators.
+- [x] The Visitor experience is the same whether reached from a Share Link or a Publication, apart from what discarding restores.

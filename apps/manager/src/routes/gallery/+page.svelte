@@ -6,12 +6,13 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let searched = $state('');
+	let sort = $state<'endorsed' | 'newest'>('endorsed');
 
 	async function run(term: string) {
 		loading = true;
 		error = null;
 		try {
-			listings = await loadGallery(term);
+			listings = await loadGallery(term, sort);
 			searched = term.trim();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Could not open the Gallery';
@@ -66,6 +67,23 @@
 		</button>
 	</form>
 
+	<div class="flex gap-1 text-sm">
+		{#each [{ key: 'endorsed', label: 'Most endorsed' }, { key: 'newest', label: 'Newest' }] as tab (tab.key)}
+			<button
+				type="button"
+				class="rounded-lg px-3 py-1.5 font-medium transition {sort === tab.key
+					? 'bg-slate-200 text-slate-900'
+					: 'text-slate-600 hover:bg-slate-100'}"
+				onclick={() => {
+					sort = tab.key as 'endorsed' | 'newest';
+					void run(query);
+				}}
+			>
+				{tab.label}
+			</button>
+		{/each}
+	</div>
+
 	{#if loading}
 		<p class="text-sm text-slate-500">Loading…</p>
 	{:else if error}
@@ -88,6 +106,7 @@
 						<p class="mt-1 text-sm text-slate-600">{listing.description}</p>
 						<p class="mt-2 flex flex-wrap gap-x-3 text-xs text-slate-500">
 							{#if listing.attribution}<span>{listing.attribution}</span>{/if}
+							<span title="Endorsements">★ {listing.endorsementCount}</span>
 							<span title="Boards">▦ {listing.figures.boardCount}</span>
 							<span title="Buttons">◻ {listing.figures.buttonCount}</span>
 							{#if gridRange(listing)}<span title="Grid size">⊞ {gridRange(listing)}</span>{/if}
