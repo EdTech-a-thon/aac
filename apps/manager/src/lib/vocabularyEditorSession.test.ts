@@ -251,6 +251,38 @@ describe('vocabularyEditorSession Symbols', () => {
 		expect(pendingBoardButtonMutations(reopened).length).toBeGreaterThan(0);
 	});
 
+	it('discards a Visitor’s edits onto the source as it now stands, not as it was', () => {
+		// A Share Link is live (ADR 0010), so discarding re-reads the source. Any
+		// Change Set applied since the Visitor arrived is part of what they get
+		// back — this is what separates it from rewinding to the opening state.
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [] });
+		session.boards = [{ ...board, name: 'Renamed by a Visitor' }];
+		expect(pendingBoardButtonMutations(session).length).toBeGreaterThan(0);
+
+		// The Manager renamed it while the Visitor was editing.
+		replaceEditorLiveFromServer(session, [{ ...board, name: 'Renamed by its Manager' }], {
+			'board-1': []
+		});
+
+		expect(session.boards[0]?.name).toBe('Renamed by its Manager');
+		expect(session.baseBoards[0]?.name).toBe('Renamed by its Manager');
+		expect(pendingBoardButtonMutations(session)).toEqual([]);
+	});
+
+	it('leaves a Visitor free to edit again after discarding', () => {
+		const session = getVocabularyEditorSession('vocab-1');
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [] });
+		session.boards = [{ ...board, name: 'First attempt' }];
+		replaceEditorLiveFromServer(session, [board], { 'board-1': [] });
+		expect(pendingBoardButtonMutations(session)).toEqual([]);
+
+		session.boards = [{ ...board, name: 'Second attempt' }];
+		expect(pendingBoardButtonMutations(session)).toEqual([
+			expect.objectContaining({ op: 'update_board', id: 'board-1', name: 'Second attempt' })
+		]);
+	});
+
 	it('keeps a usable selection when the draft no longer holds the selected Board', () => {
 		const session = getVocabularyEditorSession('vocab-1');
 		replaceEditorLiveFromServer(session, [board, board2], { 'board-1': [], 'board-2': [] });

@@ -1,0 +1,11 @@
+# The publishing Attestation is re-signed per version and keeps its author
+
+Publishing requires three separate confirmations — that the Manager holds the right to share the content, that it will be free for anyone to copy and use, and that it contains no identifying content about a person who has not agreed to it — and each is stored individually, alongside the attesting User, the time, and the identifier of the exact consent wording shown. Consent wordings are immutable records, so the question "what did this person actually agree to" is always answerable, and rewording one clause later does not invalidate the record of the others. Copyright and privacy are different failures and one checkbox cannot carry both; for AAC in particular the likelier harm is a child's photograph or a family's names, which is a privacy problem that a copyright confirmation would not catch.
+
+The Attestation is re-signed for every Publication Version, because consent to one version's content says nothing about another's — v3 may carry a commercially licensed symbol set that v1 did not. This is also why the publish flow shows every distinct Symbol used as a contact sheet immediately above the confirmations: most infringing or personal images are recognisable on sight and entirely invisible in a list of board names.
+
+The attesting User is retained even when that User is deleted or stops being a Manager. This deliberately differs from `change_sets`, which sets its author to null on user deletion (ADR 0001's history is about provenance, and anonymising it costs nothing). An Attestation is the evidence that a specific person claimed the rights, so nulling it destroys the only thing it exists to record.
+
+## Consequences
+
+Any Manager may publish unilaterally, consistent with how Share Links, Change Sets, and Manager removal already work, so the Attestation records an individual's claim rather than the Vocabulary's Managers collectively. A co-Manager who disagrees can unpublish, and the record still says who claimed the rights. Reports are stored as rows and emailed as notifications, but nothing automated acts on them: withdrawing a Publication in response is a manual operator matter, and there is no takedown power in the product yet.

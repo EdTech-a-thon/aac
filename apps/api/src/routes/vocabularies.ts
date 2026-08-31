@@ -10,6 +10,7 @@ import {
 type Vocabulary = {
   id: string;
   name: string;
+  description: string;
   created_at: string;
   updated_at: string;
 };
@@ -223,7 +224,7 @@ vocabularyRoutes.get("/", async (c) => {
   const userId = c.get("user").id;
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at, vocabulary_managers!inner(user_id)")
+    .select("id, name, description, created_at, updated_at, vocabulary_managers!inner(user_id)")
     .eq("vocabulary_managers.user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -248,7 +249,7 @@ vocabularyRoutes.get("/using", async (c) => {
   // ones they can communicate with. See ADR 0012.
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at");
+    .select("id, name, description, created_at, updated_at");
 
   if (error) {
     return c.json({ error: pgErrorMessage(error) }, 400);
@@ -288,11 +289,26 @@ vocabularyRoutes.post("/:id/duplicate", async (c) => {
   const managed = await requireVocabularyManager(supabase, c.get("user").id, sourceId);
   if (!managed.ok) return c.json({ error: managed.error }, 404);
 
-  const body = await c.req
-    .json<{ name?: string; snapshot?: VocabularyCopySnapshot }>()
-    .catch((): { name?: string; snapshot?: VocabularyCopySnapshot } => ({}));
+  type DuplicateBody = {
+    name?: string;
+    description?: string;
+    snapshot?: VocabularyCopySnapshot;
+  };
+  const body = await c.req.json<DuplicateBody>().catch((): DuplicateBody => ({}));
   const name = typeof body.name === "string" ? body.name : "";
   let snapshot = body.snapshot;
+
+  // The description comes across with the duplicate the way the name does. A
+  // caller may override it; otherwise the source's own description is used.
+  let description = typeof body.description === "string" ? body.description : undefined;
+  if (description === undefined) {
+    const sourceResult = await supabase
+      .from("vocabularies")
+      .select("description")
+      .eq("id", sourceId)
+      .maybeSingle();
+    description = (sourceResult.data as { description?: string } | null)?.description ?? "";
+  }
 
   if (!snapshot) {
     const loaded = await loadVocabularyCopySnapshot(supabase, sourceId);
@@ -304,6 +320,7 @@ vocabularyRoutes.post("/:id/duplicate", async (c) => {
   const { data, error } = await supabase.rpc("duplicate_vocabulary", {
     p_source_vocabulary_id: sourceId,
     p_name: name,
+    p_description: description,
     p_initial_snapshot: copied.initialSnapshot,
     p_mutations: copied.mutations,
   });
@@ -472,7 +489,7 @@ vocabularyRoutes.get("/:id", async (c) => {
 
   const { data, error } = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at")
+    .select("id, name, description, created_at, updated_at")
     .eq("id", id)
     .maybeSingle();
 
@@ -499,7 +516,7 @@ vocabularyRoutes.get("/:id/live", async (c) => {
 
   const vocabularyResult = await supabase
     .from("vocabularies")
-    .select("id, name, created_at, updated_at")
+    .select("id, name, description, created_at, updated_at")
     .eq("id", id)
     .maybeSingle();
   if (vocabularyResult.error) {
@@ -598,17 +615,25 @@ vocabularyRoutes.get("/:id/live", async (c) => {
 vocabularyRoutes.patch("/:id", async (c) => {
   const supabase = c.get("supabase");
   const id = c.req.param("id");
-  const body = await c.req.json<{ name?: string }>().catch((): { name?: string } => ({}));
+  type VocabularyPatch = { name?: string; description?: string };
+  const body = await c.req.json<VocabularyPatch>().catch((): VocabularyPatch => ({}));
 
-  if (typeof body.name !== "string") {
-    return c.json({ error: "name is required" }, 400);
+  // Name and description are both editable here, independently: a Manager may
+  // rename without touching the description, or the reverse. Neither is a
+  // Change Set — see CONTEXT.md, Vocabulary.
+  const patch: VocabularyPatch = {};
+  if (typeof body.name === "string") patch.name = body.name;
+  if (typeof body.description === "string") patch.description = body.description;
+
+  if (Object.keys(patch).length === 0) {
+    return c.json({ error: "name or description is required" }, 400);
   }
 
   const { data, error } = await supabase
     .from("vocabularies")
-    .update({ name: body.name })
+    .update(patch)
     .eq("id", id)
-    .select("id, name, created_at, updated_at")
+    .select("id, name, description, created_at, updated_at")
     .maybeSingle();
 
   if (error) {

@@ -1,0 +1,11 @@
+# Report notification is throttled, self-addressed mail sent through Cloudflare
+
+Reports are emailed to a single operator address through Cloudflare Email Service's REST API from `apps/api`, rather than through a general-purpose email provider. The decision turns on one fact: sends to a *verified destination address* on the account need no onboarded sending domain, no SPF/DKIM/DMARC records, and no Workers Paid plan, and they are exempt from quotas and daily limits. Because a Report notification is mail addressed to ourselves, the entire feature sits inside the free case. The REST API is used rather than a Worker's `send_email` binding so that everything stays in `apps/api`, where the Report rows and the only service-role credential already live, instead of standing up a second deployable that would need its own copy of that credential.
+
+There is no scheduler. A Report triggers an email only if none has been sent in the last hour, and the email that does go out covers every Report not yet notified — so the throttle delays notifications without dropping them, and no cron job, timezone, or digest state exists to get wrong. Claiming the un-notified Reports and marking them notified happens in one statement, so simultaneous Reports cannot both decide to send, and a failed send leaves them unclaimed for the next attempt. Reports are stored regardless of whether mail succeeds; the record is the point and the email is a nudge toward it.
+
+## Consequences
+
+A burst of Reports followed by silence leaves the tail unnotified until the next Report arrives, possibly for days. Accepted: nothing is lost, a genuinely problematic Publication keeps generating Reports and so keeps the catch-up flowing, and closing the gap would mean reintroducing the scheduler this decision removes.
+
+The larger constraint is that this channel can only ever email *us*. Emailing a publisher — that their Publication was reported, or that someone Endorsed it — is an arbitrary recipient, which requires onboarding a sending domain and a Workers Paid plan. That is invisible in the code, so any feature that wants to notify Users should expect to revisit this ADR rather than assume the existing sender will stretch. Cloudflare's outbound transactional sending is also in beta, which is why sending sits behind a small interface whose unconfigured case is a logged no-op.

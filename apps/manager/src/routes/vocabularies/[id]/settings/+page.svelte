@@ -15,10 +15,51 @@
 		replaceEditorPaletteFromServer,
 		subscribeEditorRevision
 	} from '$lib/vocabularyEditorSession';
-	import type { Board, BoardButton, PaletteColor, SnippetInclusion } from '$lib/types';
+	import type {
+		Board,
+		BoardButton,
+		PaletteColor,
+		SnippetInclusion,
+		Vocabulary
+	} from '$lib/types';
 
 	const dashboard = getDashboard();
 	const vocabularyId = $derived(page.params.id ?? '');
+
+	const vocabulary = $derived(
+		dashboard.vocabularies.find((entry) => entry.id === vocabularyId) ?? null
+	);
+
+	// Null means "not edited since the last save", so the field follows the
+	// stored description until the Manager actually types something.
+	let descriptionDraft = $state<string | null>(null);
+	let savingDescription = $state(false);
+	let descriptionError = $state<string | null>(null);
+
+	const storedDescription = $derived(vocabulary?.description ?? '');
+	const descriptionValue = $derived(descriptionDraft ?? storedDescription);
+	const descriptionDirty = $derived(
+		descriptionDraft !== null && descriptionDraft !== storedDescription
+	);
+
+	async function saveDescription() {
+		if (!dashboard.auth || savingDescription || !descriptionDirty) return;
+		savingDescription = true;
+		descriptionError = null;
+		try {
+			const data = await apiFetch<{ vocabulary: Vocabulary }>(`/vocabularies/${vocabularyId}`, {
+				method: 'PATCH',
+				accessToken: dashboard.auth.session.access_token,
+				body: JSON.stringify({ description: descriptionDraft ?? '' })
+			});
+			dashboard.replaceVocabulary(data.vocabulary);
+			descriptionDraft = null;
+		} catch (err) {
+			descriptionError = err instanceof Error ? err.message : 'Failed to save description';
+		} finally {
+			savingDescription = false;
+		}
+	}
 
 	let revision = $state(0);
 	let loading = $state(true);
@@ -262,6 +303,56 @@
 			<VocabularyChangeActions vocabularyId={vocabularyId} auth={dashboard.auth} />
 		{/if}
 	</div>
+
+	<section class="max-w-4xl space-y-3">
+		<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Details</h2>
+
+		<div class="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+			<label class="block space-y-1.5">
+				<span class="text-sm font-medium text-slate-700">Description</span>
+				<span class="block text-xs text-slate-500">
+					What this Vocabulary is for and who it suits. Optional, and saved on its own — this is
+					not part of the unsaved set that Save / Suggest applies.
+				</span>
+				<textarea
+					class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+					rows="3"
+					value={descriptionValue}
+					oninput={(event) => {
+						descriptionDraft = (event.currentTarget as HTMLTextAreaElement).value;
+					}}
+				></textarea>
+			</label>
+
+			{#if descriptionError}
+				<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{descriptionError}</p>
+			{/if}
+
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+					disabled={!descriptionDirty || savingDescription}
+					onclick={saveDescription}
+				>
+					{savingDescription ? 'Saving…' : 'Save description'}
+				</button>
+				{#if descriptionDirty}
+					<button
+						type="button"
+						class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+						disabled={savingDescription}
+						onclick={() => {
+							descriptionDraft = null;
+							descriptionError = null;
+						}}
+					>
+						Cancel
+					</button>
+				{/if}
+			</div>
+		</div>
+	</section>
 
 	<section class="max-w-4xl space-y-3">
 		<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Palette</h2>

@@ -20,6 +20,7 @@
 		editorDraftState,
 		getVocabularyEditorSession,
 		isEditorDirty,
+		replaceEditorLiveFromServer,
 		subscribeEditorRevision,
 		visibleVocabularySnapshot
 	} from '$lib/vocabularyEditorSession';
@@ -60,6 +61,21 @@
 	let signInOpen = $state(false);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
+
+	let discardOpen = $state(false);
+	let discarding = $state(false);
+
+	// Offer the discard only when there is something to throw away. A draft may
+	// be kept on this device, or the Visitor may simply have unsaved edits in
+	// front of them — a browser that refuses storage still gets the control.
+	const hasLocalEdits = $derived.by(() => {
+		revision;
+		const currentShared = shared;
+		if (!currentShared) return false;
+		if (savedAt) return true;
+		const session = getVocabularyEditorSession(currentShared.vocabulary.id);
+		return session.hydrated && isEditorDirty(session);
+	});
 
 	// Keeping a shared Board asks where it should go.
 	let destinationOpen = $state(false);
@@ -199,12 +215,61 @@
 		void keepThis();
 	}
 
+	/**
+	 * Declining a draft kept from a previous visit. The session was hydrated
+	 * from the link on open, so there is nothing in front of the Visitor to
+	 * restore — only the stored draft to drop.
+	 */
 	function startOver() {
 		const storage = browserDraftStorage();
 		if (storage) clearVisitorDraft(storage, token);
 		keptDraft = null;
 		draftSettled = true;
 		savedAt = null;
+	}
+
+	/**
+	 * Throw away every local edit and go back to what the link shows. A Share
+	 * Link is live (ADR 0010), so this re-reads the source rather than rewinding
+	 * to whatever it said when the Visitor arrived — any Change Set applied
+	 * since then is part of what they get back.
+	 *
+	 * Unrecoverable by definition: these edits only ever lived in this browser.
+	 */
+	async function discardMyChanges() {
+		const currentShared = shared;
+		if (!currentShared || discarding) return;
+		discarding = true;
+		saveError = null;
+		try {
+			const storage = browserDraftStorage();
+			if (storage) clearVisitorDraft(storage, token);
+
+			const payload = await loadSharedVocabulary(token);
+			shared = payload.share;
+			source = sharedVocabularySource(payload.content);
+			replaceEditorLiveFromServer(
+				getVocabularyEditorSession(payload.share.vocabulary.id),
+				payload.content.boards,
+				payload.content.buttonsByBoardId,
+				payload.content.paletteColors,
+				payload.content.snippetInclusions
+			);
+
+			keptDraft = null;
+			draftSettled = true;
+			savedAt = null;
+			discardOpen = false;
+		} catch {
+			// The link went away while they were deciding. Their edits are already
+			// gone, so say what happened rather than pretending it worked.
+			discardOpen = false;
+			unavailable = true;
+			shared = null;
+			source = null;
+		} finally {
+			discarding = false;
+		}
 	}
 </script>
 
@@ -246,12 +311,14 @@
 				{/if}
 				{#if savedAt}
 					<span class="text-sm text-slate-500">Your changes are kept on this device</span>
+				{/if}
+				{#if hasLocalEdits}
 					<button
 						type="button"
 						class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-						onclick={startOver}
+						onclick={() => (discardOpen = true)}
 					>
-						Discard
+						Discard my changes
 					</button>
 				{/if}
 				{#if signedIn}
@@ -305,6 +372,34 @@
 
 <Modal bind:open={signInOpen} title="Save this to your account">
 	<VisitorSignIn {onauthed} />
+</Modal>
+
+<Modal bind:open={discardOpen} title="Discard your changes?">
+	<div class="space-y-3">
+		<p class="text-sm text-slate-600">
+			Everything you have changed here will go, and this will look the way it does for the person
+			who shared it. Your changes were only ever in this browser, so there is no way to get them
+			back.
+		</p>
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+				disabled={discarding}
+				onclick={() => (discardOpen = false)}
+			>
+				Keep editing
+			</button>
+			<button
+				type="button"
+				class="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+				disabled={discarding}
+				onclick={discardMyChanges}
+			>
+				{discarding ? 'Discarding…' : 'Discard my changes'}
+			</button>
+		</div>
+	</div>
 </Modal>
 
 <Modal bind:open={destinationOpen} title="Keep this board">

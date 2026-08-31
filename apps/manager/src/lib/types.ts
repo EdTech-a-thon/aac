@@ -5,6 +5,7 @@ export type { ButtonAction };
 export type Vocabulary = {
 	id: string;
 	name: string;
+	description: string;
 	displayName: string;
 	created_at: string;
 	updated_at: string;
