@@ -162,6 +162,39 @@ describe("Publishing preconditions", () => {
     expect(all.status).toBe(201);
   });
 
+  it("refuses a confirmation whose wording belongs to a different clause", async () => {
+    const user = await createTestUser();
+    const { vocabulary } = await publishableVocabulary(user.accessToken, "Mismatched wording");
+    const confirmations = await allConfirmations(user.accessToken, vocabulary.id);
+
+    const rights = confirmations.find((entry) => entry.clause === "rights")!;
+    const privacy = confirmations.find((entry) => entry.clause === "no_personal_content")!;
+
+    // Filing the privacy wording as the copyright confirmation would make the
+    // Attestation claim something nobody agreed to.
+    const swapped = await publish(user.accessToken, vocabulary.id, {
+      confirmations: [
+        { clause: "rights", consentTextId: privacy.consentTextId },
+        { clause: "free_to_copy", consentTextId: rights.consentTextId },
+        privacy,
+      ],
+    });
+    expect(swapped.status).toBe(400);
+  });
+
+  it("refuses a confirmation naming a wording we never recorded", async () => {
+    const user = await createTestUser();
+    const { vocabulary } = await publishableVocabulary(user.accessToken, "Invented wording");
+    const confirmations = await allConfirmations(user.accessToken, vocabulary.id);
+
+    const invented = await publish(user.accessToken, vocabulary.id, {
+      confirmations: confirmations.map((entry) =>
+        entry.clause === "rights" ? { ...entry, consentTextId: randomUUID() } : entry,
+      ),
+    });
+    expect(invented.status).toBe(400);
+  });
+
   it("does not let a non-Manager publish", async () => {
     const owner = await createTestUser();
     const stranger = await createTestUser();

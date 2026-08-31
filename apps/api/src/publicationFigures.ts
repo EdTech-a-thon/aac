@@ -19,6 +19,11 @@ export type PublicationFigures = {
  * count and out of the grid size range. Every Button counts, including those on
  * Snippets — they are all part of what a copier gets, and Button count is the
  * honest complexity signal where a grid size is only capacity.
+ *
+ * The range runs over each dimension independently. Ranging over total cells
+ * instead would let one Board stand for the whole spread, so a Vocabulary of a
+ * 2×12 and a 6×4 — equal in cells — would advertise a single size and hide the
+ * other shape entirely.
  */
 export function publicationFigures(snapshot: FullVocabularySnapshot): PublicationFigures {
   const boards = snapshot.boards.filter((grid) => grid.kind !== "snippet");
@@ -29,19 +34,12 @@ export function publicationFigures(snapshot: FullVocabularySnapshot): Publicatio
   let maxRows = 0;
 
   if (boards.length > 0) {
-    // The range runs over total cells, but each end is reported with the grid
-    // it came from, so a listing can say "4×3 – 8×6" rather than a cell count.
-    let smallest = boards[0];
-    let largest = boards[0];
-    for (const board of boards) {
-      const cells = board.width * board.height;
-      if (cells < smallest.width * smallest.height) smallest = board;
-      if (cells > largest.width * largest.height) largest = board;
-    }
-    minColumns = smallest.width;
-    minRows = smallest.height;
-    maxColumns = largest.width;
-    maxRows = largest.height;
+    const widths = boards.map((board) => board.width);
+    const heights = boards.map((board) => board.height);
+    minColumns = Math.min(...widths);
+    maxColumns = Math.max(...widths);
+    minRows = Math.min(...heights);
+    maxRows = Math.max(...heights);
   }
 
   return {

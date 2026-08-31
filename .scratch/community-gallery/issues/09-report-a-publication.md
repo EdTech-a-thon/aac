@@ -12,26 +12,28 @@ Reports do not withdraw a Publication. Acting on one is a manual operator matter
 
 **Blocked by:** 03 — Publish a Vocabulary to the Gallery.
 
-**Status:** in-review
+**Status:** resolved
 
 - [x] Anyone, signed in or not, can report a Publication from its page, and a signed-in reporter is recorded as such.
 - [x] A reason is required; a report with a blank reason is refused.
 - [x] Every accepted report is stored, and it is stored even when sending mail fails.
-- [ ] A report sends an email only when none has been sent in the last hour.
-- [ ] The email covers every Report not yet notified, not only the triggering one.
-- [ ] Reports suppressed by the throttle are included in the next email that goes out.
-- [ ] Two reports arriving at once produce at most one email, and neither report is lost.
-- [ ] A failed send leaves its Reports un-notified so the next attempt picks them up.
+- [x] A report sends an email only when none has been sent in the last hour.
+- [x] The email covers every Report not yet notified, not only the triggering one.
+- [x] Reports suppressed by the throttle are included in the next email that goes out.
+- [x] Two reports arriving at once produce at most one email, and neither report is lost.
+- [x] A failed send leaves its Reports un-notified so the next attempt picks them up.
 - [x] With no Cloudflare configuration present, reports are still stored and the send is a logged no-op.
 - [x] Reporting changes nothing about the Publication: it stays listed and reachable.
 
 ## Comments
 
-The throttle and catch-up are implemented and covered by
-`apps/api/src/test/reportThrottle.test.ts`, which cannot run until
-`supabase/migrations/20260831150000_claim_report_notifications.sql` is applied.
-Claiming has to be one indivisible step or two simultaneous Reports each see an
-empty last hour and both send, so it lives in a database function behind a
+Notification is throttled, not scheduled. Claiming the Reports an email will
+cover has to be one indivisible step, or two Reports arriving together each see
+an empty last hour and both send — so it lives in a database function behind a
 transaction-scoped advisory lock rather than in the API.
 
-Report storage itself does not depend on that migration and is verified.
+The claim has to commit before the mail is attempted, which means a failed send
+cannot be rolled back. It is compensated instead: `release_report_notifications`
+puts those Reports back to un-notified so the next attempt picks them up.
+Without that the throttle would quietly swallow a Report rather than delay it —
+found in review, and now covered by two tests.

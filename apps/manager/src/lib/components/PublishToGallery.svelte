@@ -11,7 +11,13 @@
 		max_columns: number;
 		max_rows: number;
 	};
-	type PublicationVersion = { id: string; seq: number; name: string; created_at: string };
+	type PublicationVersion = {
+		id: string;
+		seq: number;
+		name: string;
+		attribution: string;
+		created_at: string;
+	};
 	type PublicationState = {
 		publication: {
 			slug: string;
@@ -95,7 +101,9 @@
 	});
 
 	function openPublish() {
-		attribution = gallery?.publication?.currentVersion ? attribution : '';
+		// Republishing keeps the credit line the last version carried, so it is
+		// not silently lost by anyone who reloads before publishing again.
+		attribution = gallery?.publication?.currentVersion?.attribution ?? '';
 		checked = {};
 		publishError = null;
 		open = true;
@@ -127,12 +135,14 @@
 			await apiFetch(`/vocabularies/${vocabularyId}/publish`, {
 				method: 'POST',
 				accessToken: auth.session.access_token,
+				// Only what was actually ticked. The server refuses a publish that
+				// does not carry all three, so this is a real gate rather than a
+				// disabled button — an Attestation must record what was confirmed.
 				body: JSON.stringify({
 					attribution,
-					confirmations: consentTexts.map((text) => ({
-						clause: text.clause,
-						consentTextId: text.id
-					}))
+					confirmations: consentTexts
+						.filter((text) => checked[text.clause])
+						.map((text) => ({ clause: text.clause, consentTextId: text.id }))
 				})
 			});
 			open = false;

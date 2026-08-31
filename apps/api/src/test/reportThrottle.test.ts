@@ -148,8 +148,30 @@ describe("Report notification throttle", () => {
     // The row is the record, and it survives regardless of the mail.
     const { data } = await service()
       .from("publication_reports")
-      .select("reason")
+      .select("notified_at")
       .eq("reason", marker);
-    expect((data ?? []).length).toBe(1);
+    const rows = (data ?? []) as { notified_at: string | null }[];
+    expect(rows.length).toBe(1);
+
+    // And it goes back to un-notified, or the throttle would have swallowed it:
+    // the claim commits before the send, so a failure has to be compensated.
+    expect(rows[0].notified_at).toBeNull();
+  });
+
+  it("picks up a report whose earlier send failed, on the next attempt", async () => {
+    const publisher = await createTestUser();
+    const slug = await publishVocabulary(publisher.accessToken, `Retried ${randomUUID().slice(0, 8)}`);
+    await quietenRecentNotifications();
+
+    const marker = `retry after failure ${randomUUID().slice(0, 8)}`;
+    await apiJson(app, `/gallery/${slug}/reports`, { body: { reason: marker } });
+
+    const failing = recordingMailer(true);
+    await notifyPendingReports(service(), failing.mailer, "https://example.test");
+
+    const working = recordingMailer();
+    const retry = await notifyPendingReports(service(), working.mailer, "https://example.test");
+    expect(retry.sent).toBe(true);
+    expect(working.sent[0].body).toContain(marker);
   });
 });

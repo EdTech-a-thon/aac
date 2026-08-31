@@ -103,7 +103,7 @@ async function publishedBySlug(
   return publication;
 }
 
-type ListingRow = {
+type PublicationSummaryRow = {
   id: string;
   slug: string;
   current_version_id: string | null;
@@ -122,9 +122,9 @@ type ListingRow = {
 };
 
 /**
- * The Gallery index. Newest first for now — most-endorsed becomes the default
- * once Endorsements exist, and copy counts are deliberately never a ranking
- * signal (ADR 0014). Nothing is recorded when a listing is seen.
+ * The Gallery index. Ordered by standing Endorsements by default, with newest
+ * offered alongside; copy counts are deliberately never a ranking signal
+ * (ADR 0014). Nothing is recorded when a Publication is seen.
  */
 galleryRoutes.get("/", async (c) => {
   const query = (c.req.query("q") ?? "").trim();
@@ -142,9 +142,9 @@ galleryRoutes.get("/", async (c) => {
   if (query) {
     // Case-insensitive substring over the title and description as published,
     // never over the live Vocabulary's current name.
-    const escaped = query.replace(/[%,()]/g, " ");
+    const stripped = query.replace(/[%,()]/g, " ");
     request = request.or(
-      `name.ilike.%${escaped}%,description.ilike.%${escaped}%`,
+      `name.ilike.%${stripped}%,description.ilike.%${stripped}%`,
       { referencedTable: "publication_versions" },
     );
   }
@@ -152,7 +152,7 @@ galleryRoutes.get("/", async (c) => {
   const { data, error } = await request;
   if (error) return c.json({ publications: [], query });
 
-  const rows = ((data ?? []) as unknown as ListingRow[]).filter(
+  const rows = ((data ?? []) as unknown as PublicationSummaryRow[]).filter(
     (row) => row.publication_versions !== null,
   );
   const counts = await standingEndorsements(
@@ -160,7 +160,7 @@ galleryRoutes.get("/", async (c) => {
     rows.map((row) => row.id),
   );
 
-  const listings = rows.map((row) => {
+  const summaries = rows.map((row) => {
     const version = row.publication_versions!;
     return {
       slug: row.slug,
@@ -185,13 +185,13 @@ galleryRoutes.get("/", async (c) => {
   // used for ranking (ADR 0014). Newest breaks ties and is offered outright.
   const newest = (a: { publishedAt: string }, b: { publishedAt: string }) =>
     b.publishedAt.localeCompare(a.publishedAt);
-  listings.sort(
+  summaries.sort(
     sort === "newest"
       ? newest
       : (a, b) => b.endorsementCount - a.endorsementCount || newest(a, b),
   );
 
-  return c.json({ publications: listings, query, sort });
+  return c.json({ publications: summaries, query, sort });
 });
 
 galleryRoutes.get("/:slug", async (c) => {

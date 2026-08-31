@@ -63,6 +63,10 @@
 	});
 
 	let signInOpen = $state(false);
+	// What the visitor was trying to do when they were asked to sign in. Both
+	// Endorse and Save a copy need an account, and resuming the wrong one would
+	// copy a Vocabulary somebody only meant to endorse.
+	let pendingIntent = $state<'copy' | 'endorse' | null>(null);
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 
@@ -195,6 +199,7 @@
 		if (!published || saving) return;
 		const auth = readAuth();
 		if (!auth) {
+			pendingIntent = 'copy';
 			signInOpen = true;
 			return;
 		}
@@ -220,13 +225,20 @@
 	function onauthed() {
 		signInOpen = false;
 		authTick += 1;
-		void keepThis();
+		const intent = pendingIntent;
+		pendingIntent = null;
+		if (intent === 'endorse') {
+			void toggleEndorsement();
+		} else if (intent === 'copy') {
+			void keepThis();
+		}
 	}
 
 	async function toggleEndorsement() {
 		if (!published || endorsing) return;
 		const auth = readAuth();
 		if (!auth) {
+			pendingIntent = 'endorse';
 			signInOpen = true;
 			return;
 		}
@@ -387,7 +399,11 @@
 	{/if}
 </div>
 
-<Modal bind:open={signInOpen} title="Save this to your account">
+<Modal
+	bind:open={signInOpen}
+	title={pendingIntent === 'endorse' ? 'Sign in to endorse this' : 'Save this to your account'}
+	onClose={() => (pendingIntent = null)}
+>
 	<VisitorSignIn {onauthed} />
 </Modal>
 

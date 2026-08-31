@@ -225,7 +225,7 @@ export type GalleryPublication = {
 	content: VocabularyContent;
 };
 
-export type GalleryListing = {
+export type PublicationSummary = {
 	slug: string;
 	endorsementCount: number;
 	title: string;
@@ -239,11 +239,11 @@ export type GalleryListing = {
 export async function loadGallery(
 	query: string,
 	sort: 'endorsed' | 'newest' = 'endorsed'
-): Promise<GalleryListing[]> {
+): Promise<PublicationSummary[]> {
 	const params = new URLSearchParams();
 	if (query.trim()) params.set('q', query.trim());
 	params.set('sort', sort);
-	const data = await apiFetch<{ publications: GalleryListing[] }>(`/gallery?${params}`);
+	const data = await apiFetch<{ publications: PublicationSummary[] }>(`/gallery?${params}`);
 	return data.publications;
 }
 

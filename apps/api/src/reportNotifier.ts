@@ -94,9 +94,11 @@ export function reportEmailBody(
  * Send one catch-up email if the last hour had none.
  *
  * The claim is atomic in the database, so simultaneous Reports produce at most
- * one email between them. Sending happens after the claim: a failure is logged
- * and the Reports stay claimed, which is the deliberate trade — a Report is
- * never lost from the table, and the table is the record.
+ * one email between them. It has to commit before the mail is attempted, or two
+ * callers would each see an empty last hour — so a failed send is compensated
+ * rather than rolled back: the claimed Reports are released back to un-notified
+ * and the next attempt picks them up. Without that, a throttle that exists to
+ * delay Reports would quietly swallow them.
  */
 export async function notifyPendingReports(
   supabase: SupabaseClient,
@@ -136,6 +138,16 @@ export async function notifyPendingReports(
     return { sent: true, reports: reports.length };
   } catch (err) {
     console.error("[reports] Could not send the report notification:", err);
+    const { error: releaseError } = await supabase.rpc("release_report_notifications", {
+      p_report_ids: reports.map((report) => report.id),
+    });
+    if (releaseError) {
+      // Now they really could be missed, so say so loudly enough to act on.
+      console.error(
+        "[reports] Could not release reports after a failed send; they will not be re-sent:",
+        releaseError.message,
+      );
+    }
     return { sent: false, reports: reports.length };
   }
 }

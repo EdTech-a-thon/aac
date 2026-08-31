@@ -14,6 +14,10 @@
 	const vocabularyId = $derived(page.params.id ?? '');
 
 	let vocabulary = $state<Vocabulary | null>(null);
+	// Where this Vocabulary was copied from, when it came off the Gallery. A dead
+	// reference: it never updates this copy, and it resolves to nothing once that
+	// Publication is withdrawn. Shown only here, to this Vocabulary's Managers.
+	let origin = $state<{ slug: string; title: string; seq: number } | null>(null);
 	let nameDraft = $state('');
 	let managers = $state<Manager[]>([]);
 	let communicators = $state<Communicator[]>([]);
@@ -111,7 +115,10 @@
 			error = null;
 			try {
 				const [vocabData, managersData, communicatorsData, shareData] = await Promise.all([
-					apiFetch<{ vocabulary: Vocabulary }>(`/vocabularies/${id}`, {
+					apiFetch<{
+						vocabulary: Vocabulary;
+						origin: { slug: string; title: string; seq: number } | null;
+					}>(`/vocabularies/${id}`, {
 						accessToken: auth.session.access_token
 					}),
 					apiFetch<{ managers: Manager[] }>(`/vocabularies/${id}/managers`, {
@@ -126,6 +133,7 @@
 				]);
 				if (cancelled) return;
 				vocabulary = vocabData.vocabulary;
+				origin = vocabData.origin;
 				nameDraft = vocabData.vocabulary.name;
 				managers = managersData.managers;
 				communicators = communicatorsData.communicators;
@@ -303,7 +311,7 @@
 {:else}
 	<div class="grid h-full min-h-0 grid-rows-[auto_1fr]">
 		<header
-			class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm"
+			class="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm"
 		>
 			<input
 				class="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-lg font-semibold text-slate-900 outline-none transition hover:border-slate-200 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
@@ -323,6 +331,16 @@
 					}
 				}}
 			/>
+
+			{#if origin}
+				<p class="order-last w-full text-xs text-slate-500">
+					Copied from
+					<a class="font-medium text-blue-700 hover:underline" href={`/gallery/${origin.slug}`}>
+						{origin.title}
+					</a>
+					on the Gallery. Yours to change — it does not follow the original.
+				</p>
+			{/if}
 
 			<button
 				type="button"

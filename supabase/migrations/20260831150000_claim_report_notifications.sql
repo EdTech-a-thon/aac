@@ -11,8 +11,9 @@
 -- commits or fails.
 --
 -- Returns nothing when the last hour already had an email, which is the caller's
--- signal to stay quiet. A caller that fails to send simply does not commit, so
--- the claim is rolled back and the Reports stay unnotified for the next attempt.
+-- signal to stay quiet. The claim commits before the caller attempts to send, so
+-- a failed send is compensated rather than rolled back: see
+-- release_report_notifications, which puts those Reports back to un-notified.
 create function public.claim_report_notifications()
 returns setof public.publication_reports
 language plpgsql

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { loadGallery, type GalleryListing } from '$lib/vocabularySource';
+	import { loadGallery, type PublicationSummary } from '$lib/vocabularySource';
 
 	let query = $state('');
-	let listings = $state<GalleryListing[]>([]);
+	let publications = $state<PublicationSummary[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let searched = $state('');
@@ -12,7 +12,7 @@
 		loading = true;
 		error = null;
 		try {
-			listings = await loadGallery(term, sort);
+			publications = await loadGallery(term, sort);
 			searched = term.trim();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Could not open the Gallery';
@@ -26,10 +26,10 @@
 	});
 
 	/** "4×3" when every Board matches, "2×2 – 8×6" when they do not. */
-	function gridRange(listing: GalleryListing) {
-		if (listing.figures.boardCount === 0) return '';
-		const smallest = `${listing.figures.minColumns}×${listing.figures.minRows}`;
-		const largest = `${listing.figures.maxColumns}×${listing.figures.maxRows}`;
+	function gridRange(publication: PublicationSummary) {
+		if (publication.figures.boardCount === 0) return '';
+		const smallest = `${publication.figures.minColumns}×${publication.figures.minRows}`;
+		const largest = `${publication.figures.maxColumns}×${publication.figures.maxRows}`;
 		return smallest === largest ? smallest : `${smallest} – ${largest}`;
 	}
 </script>
@@ -88,7 +88,7 @@
 		<p class="text-sm text-slate-500">Loading…</p>
 	{:else if error}
 		<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-	{:else if listings.length === 0}
+	{:else if publications.length === 0}
 		<p class="text-sm text-slate-600">
 			{searched
 				? `Nothing here matches “${searched}”.`
@@ -96,20 +96,20 @@
 		</p>
 	{:else}
 		<ul class="space-y-3">
-			{#each listings as listing (listing.slug)}
+			{#each publications as publication (publication.slug)}
 				<li>
 					<a
 						class="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow"
-						href={`/gallery/${listing.slug}`}
+						href={`/gallery/${publication.slug}`}
 					>
-						<h2 class="text-base font-semibold text-slate-900">{listing.title}</h2>
-						<p class="mt-1 text-sm text-slate-600">{listing.description}</p>
+						<h2 class="text-base font-semibold text-slate-900">{publication.title}</h2>
+						<p class="mt-1 text-sm text-slate-600">{publication.description}</p>
 						<p class="mt-2 flex flex-wrap gap-x-3 text-xs text-slate-500">
-							{#if listing.attribution}<span>{listing.attribution}</span>{/if}
-							<span title="Endorsements">★ {listing.endorsementCount}</span>
-							<span title="Boards">▦ {listing.figures.boardCount}</span>
-							<span title="Buttons">◻ {listing.figures.buttonCount}</span>
-							{#if gridRange(listing)}<span title="Grid size">⊞ {gridRange(listing)}</span>{/if}
+							{#if publication.attribution}<span>{publication.attribution}</span>{/if}
+							<span title="Endorsements">Endorsed · {publication.endorsementCount}</span>
+							<span title="Boards">▦ {publication.figures.boardCount}</span>
+							<span title="Buttons">◻ {publication.figures.buttonCount}</span>
+							{#if gridRange(publication)}<span title="Grid size">⊞ {gridRange(publication)}</span>{/if}
 						</p>
 					</a>
 				</li>

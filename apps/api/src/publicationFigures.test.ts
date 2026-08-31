@@ -84,7 +84,7 @@ describe("publicationFigures", () => {
     expect(figures.max_rows).toBe(3);
   });
 
-  it("reports each end of the range with the grid it came from", () => {
+  it("reports the smallest and largest of each dimension", () => {
     const figures = publicationFigures(
       snapshot({
         boards: [grid("mid", 6, 4), grid("small", 2, 2), grid("big", 10, 8)],
@@ -94,13 +94,23 @@ describe("publicationFigures", () => {
     expect([figures.max_columns, figures.max_rows]).toEqual([10, 8]);
   });
 
-  it("ranges over total cells, not columns alone", () => {
-    // 10x1 is ten cells; 3x8 is twenty-four. The wider grid is the smaller one.
+  it("ranges each dimension independently, so no Board is hidden", () => {
+    // 10x1 and 3x8 have neither dimension in common. Ranging over total cells
+    // would pick one of them and advertise it as the only size.
     const figures = publicationFigures(
       snapshot({ boards: [grid("wide", 10, 1), grid("tall", 3, 8)] }),
     );
-    expect([figures.min_columns, figures.min_rows]).toEqual([10, 1]);
-    expect([figures.max_columns, figures.max_rows]).toEqual([3, 8]);
+    expect([figures.min_columns, figures.max_columns]).toEqual([3, 10]);
+    expect([figures.min_rows, figures.max_rows]).toEqual([1, 8]);
+  });
+
+  it("does not collapse two Boards of equal area but different shape", () => {
+    // 2x12 and 6x4 are both 24 cells; a cell-count range would show one size.
+    const figures = publicationFigures(
+      snapshot({ boards: [grid("tall", 2, 12), grid("wide", 6, 4)] }),
+    );
+    expect([figures.min_columns, figures.max_columns]).toEqual([2, 6]);
+    expect([figures.min_rows, figures.max_rows]).toEqual([4, 12]);
   });
 
   it("ignores Snippet sizes in the range", () => {
