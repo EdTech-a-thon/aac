@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="VoiceCommons">
+	<title>VoiceCommons</title>
+	<!-- Offset: two boards, and the ground they hold in common. -->
+	<rect x="7" y="4" width="32" height="32" rx="8.5" fill="#2F7FC4"/>
+	<path d="M34 49 L46 49 L31 60.5 Z" fill="#E8792B"/>
+	<rect x="24" y="21" width="32" height="32" rx="8.5" fill="#E8792B"/>
+	<path d="M39 21 V27.5 A8.5 8.5 0 0 1 30.5 36 H24 V29.5 A8.5 8.5 0 0 1 32.5 21 Z" fill="#123C5E"/>
+</svg>
