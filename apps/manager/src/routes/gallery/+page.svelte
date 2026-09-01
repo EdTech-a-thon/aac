@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { loadGallery, type PublicationSummary } from '$lib/vocabularySource';
+	import VoiceCommonsBrand from '$lib/components/VoiceCommonsBrand.svelte';
 
 	let query = $state('');
 	let publications = $state<PublicationSummary[]>([]);
@@ -39,6 +40,10 @@
 </svelte:head>
 
 <div class="mx-auto flex min-h-screen max-w-4xl flex-col gap-5 p-6">
+	<a class="w-fit no-underline" href="/" aria-label="VoiceCommons home">
+		<VoiceCommonsBrand compact />
+	</a>
+
 	<header class="space-y-1">
 		<h1 class="text-2xl font-semibold text-slate-900">Gallery</h1>
 		<p class="text-sm text-slate-600">

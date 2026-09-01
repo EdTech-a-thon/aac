@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { apiFetch, clearAuth, writeAuth, type AuthUser } from '$lib/auth';
+	import VoiceCommonsBrand from '$lib/components/VoiceCommonsBrand.svelte';
 	type Mode = 'login' | 'register';
 	let mode = $state<Mode>('register');
 	let name = $state(''), email = $state(''), password = $state('');
@@ -45,43 +46,41 @@
 
 <svelte:head>
 	<title>VoiceCommons — Communication belongs to everyone</title>
-	<meta name="description" content="A free, open-source AAC app built for communicators, families, and professionals." />
+	<meta name="description" content="The free, open-source AAC app built for communicators, families, and professionals." />
 </svelte:head>
 
 <main>
 	<nav>
-		<a class="brand" href="/" aria-label="VoiceCommons home"><span class="mark"><i></i><i></i><i></i></span>VoiceCommons</a>
-		<div class="navlinks"><a href="#how">How it works</a><a href="/gallery">Community boards</a><button onclick={() => openAuth('login')}>Sign in</button></div>
+		<a class="brand" href="/" aria-label="VoiceCommons home"><VoiceCommonsBrand /></a>
+		<div class="navlinks"><a href="#how">How it works</a><a href="/gallery">Community vocabularies</a><button onclick={() => openAuth('login')}>Sign in</button></div>
 	</nav>
 
 	<section class="hero">
 		<div class="copy">
-			<p class="kicker"><span></span> Free &amp; open source, always</p>
-			<h1>Everyone deserves<br />a way to be <em>heard.</em></h1>
-			<p class="lede">VoiceCommons is a free AAC app for building a voice that grows with the person using it—not a price tag.</p>
-			<div class="actions"><button class="primary" onclick={() => openAuth('register')}>Start building — it’s free <b>→</b></button><a href="/gallery">⊞ &nbsp;Explore boards</a></div>
-			<small>No trials. No locked features. No nonsense.</small>
+			<h1>Communication is a right.</h1>
+			<p class="lede">VoiceCommons is the free and open-source AAC app.</p>
+			<div class="actions"><button class="primary" onclick={() => openAuth('register')}>Build a vocabulary</button><a href="/gallery">Explore community vocabularies</a></div>
+			<small>No paid features. No ads. No nonsense.</small>
 		</div>
 		<div class="scene" aria-label="Preview of a VoiceCommons communication board">
 			<div class="circle"></div>
 			<div class="board">
-				<header><b><span class="mark tiny"><i></i><i></i><i></i></span> VoiceCommons</b><span class="person"><i>AM</i> Alex’s voice</span></header>
+				<header><b><VoiceCommonsBrand compact /></b><span class="person"><i>AM</i> Alex’s voice</span></header>
 				<div class="message">I want to go outside <button>▶ Speak</button></div>
 				<div class="grid">{#each words as word}<div class="word" style:background={word[2]}><b>{word[0]}</b><span>{word[1]}</span></div>{/each}</div>
 			</div>
-			<div class="bubble">This feels like me! <span>★</span></div>
 		</div>
 	</section>
 
 	<section class="manifesto">
-		<p class="kicker">The idea is simple</p><h2>Communication shouldn’t be a luxury.</h2>
-		<p>Too many AAC tools cost hundreds of dollars, lock essential features behind subscriptions, or make families choose between access and affordability. We think that’s absurd. VoiceCommons is built in the open, free for everyone, and shaped by the people who actually use it.</p>
+		<h2>Communication shouldn't be a luxury.</h2>
+		<p>Many AAC tools cost hundreds of dollars, lock essential features behind subscriptions, or make families choose between access and affordability. We think that's absurd. VoiceCommons is built in the open, free for everyone, and shaped by the people who actually use it.</p>
 		<div class="values"><span><b>✓</b> Free forever</span><span><b>✓</b> Open source</span><span><b>✓</b> No ads or selling of data</span></div>
 	</section>
 
 	<section class="features" id="how">
 		<article class="feature mint">
-			<div class="featurecopy"><p class="kicker">Built for real support teams</p><h2>Everyone can help.<br /><em>The right people approve.</em></h2><p>Parents and caregivers can suggest words, symbols, and board changes. SLPs and other Managers review each suggestion before it becomes part of the communicator’s voice.</p><div class="flow"><span>Parent suggests</span> → <span>SLP reviews</span> → <span>Voice grows</span></div></div>
+			<div class="featurecopy"><p class="kicker">Built for support teams</p><h2>Everyone can help.<br /><em>The right people approve.</em></h2><p>Parents and caregivers can suggest words, symbols, and board changes. SLPs and other Managers review each suggestion before it becomes part of the communicator’s voice.</p><div class="flow"><span>Parent suggests</span> → <span>SLP reviews</span> → <span>Voice grows</span></div></div>
 			<div class="approval">
 				<header><div><i>JP</i><p><b>Jamie P.</b><small>Parent · 12 minutes ago</small></p></div><span>Pending review</span></header>
 				<blockquote>“Alex has been asking to visit the garden more often.”</blockquote>
@@ -90,13 +89,13 @@
 			</div>
 		</article>
 		<article class="feature peach">
-			<div class="gallerymock"><div class="search">⌕ &nbsp; Search community boards...</div><div class="tiles"><div><span>☀</span><b>Everyday Core</b><small>48 buttons · English</small></div><div><span>♫</span><b>Music &amp; Play</b><small>24 buttons · English</small></div><div><span>♥</span><b>Feelings</b><small>36 buttons · Bilingual</small></div></div></div>
-			<div class="featurecopy"><p class="kicker">Made better together</p><h2>Don’t start from scratch.</h2><p>Browse boards shared by the community, keep a copy, and make it your own. Good ideas should travel—especially when they help someone communicate.</p><a class="textlink" href="/gallery">Visit the community gallery &nbsp;→</a></div>
+			<div class="gallerymock"><div class="search">⌕ &nbsp; Search community vocabularies...</div><div class="tiles"><div><span>☀</span><b>Everyday Core</b><small>48 buttons · English</small></div><div><span>♫</span><b>Music &amp; Play</b><small>24 buttons · English</small></div><div><span>♥</span><b>Feelings</b><small>36 buttons · Bilingual</small></div></div></div>
+			<div class="featurecopy"><p class="kicker">Made better together</p><h2>Don’t start from scratch.</h2><p>Browse boards shared by the community, keep a copy, and make it your own.</p><a class="textlink" href="/gallery">Visit the community gallery &nbsp;→</a></div>
 		</article>
 	</section>
 
 	<section class="join" id="join">
-		<div><p class="kicker">A voice is not a premium feature</p><h2>Build something<br />that sounds like <em>them.</em></h2><p>Join the people making communication more personal, collaborative, and accessible.</p></div>
+		<div><h2>Welcome to <br> the commons.</h2><p>Join the people making communication more personal, collaborative, and accessible.</p></div>
 		<div class="auth">
 			{#if checking}<p>Loading…</p>{:else}
 				<div class="tabs"><button class:active={mode === 'register'} onclick={() => mode = 'register'}>Create account</button><button class:active={mode === 'login'} onclick={() => mode = 'login'}>Sign in</button></div>
@@ -110,14 +109,14 @@
 			{/if}
 		</div>
 	</section>
-	<footer class="sitefoot"><a class="brand" href="/"><span class="mark tiny"><i></i><i></i><i></i></span>VoiceCommons</a><p>Free, open-source AAC for everyone.</p><div><a href="/gallery">Gallery</a><a href="#how">How it works</a></div></footer>
+	<footer class="sitefoot"><a class="brand" href="/"><VoiceCommonsBrand compact /></a><p>Free, open-source AAC for everyone.</p><div><a href="/gallery">Gallery</a><a href="#how">How it works</a></div></footer>
 </main>
 
 <style>
 	:global(html){scroll-behavior:smooth}:global(body){margin:0;background:#fbfaf7}:global(*){box-sizing:border-box}
 	main{--ink:#18312d;--green:#1d624f;--coral:#ef765d;--lime:#ddec77;color:var(--ink);background:#fbfaf7;font-family:Inter,ui-sans-serif,system-ui,sans-serif;overflow:hidden}
 	nav,.hero,.features,.sitefoot{width:min(1180px,calc(100% - 48px));margin:auto}nav{height:86px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:3}
-	.brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-size:21px;font-weight:850;letter-spacing:-.04em}.mark{width:35px;height:35px;padding:8px;display:flex;align-items:end;justify-content:center;gap:3px;border-radius:11px 11px 11px 3px;background:var(--green)}.mark i{width:4px;border-radius:3px;background:white}.mark i:nth-child(1){height:8px}.mark i:nth-child(2){height:16px}.mark i:nth-child(3){height:11px}.mark.tiny{width:26px;height:26px;padding:6px;border-radius:8px 8px 8px 2px}.mark.tiny i{width:3px}.mark.tiny i:nth-child(1){height:6px}.mark.tiny i:nth-child(2){height:12px}.mark.tiny i:nth-child(3){height:8px}
+	.brand{display:flex;align-items:center;color:var(--ink);text-decoration:none}
 	.navlinks{display:flex;align-items:center;gap:30px;font-size:14px;font-weight:700}.navlinks a,.sitefoot a{color:#4d615c;text-decoration:none}.navlinks button{border:1px solid #bac8c4;border-radius:99px;background:transparent;padding:10px 18px;color:var(--ink);font:inherit;cursor:pointer}
 	.hero{min-height:640px;padding:55px 0 90px;display:grid;grid-template-columns:.9fr 1.1fr;gap:50px;align-items:center}.kicker{color:var(--green);font-size:12px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}.copy>.kicker{display:flex;align-items:center;gap:9px}.copy>.kicker span{width:25px;height:2px;background:var(--coral)}
 	h1,h2{margin:0;font-family:Georgia,serif;font-weight:500;letter-spacing:-.055em}h1{font-size:clamp(55px,6vw,82px);line-height:.98}em{color:var(--coral);font-weight:inherit}.lede{max-width:520px;margin:27px 0;color:#556a65;font-size:19px;line-height:1.65}.actions{display:flex;gap:12px}.actions button,.actions a{min-height:52px;padding:0 23px;display:flex;align-items:center;justify-content:center;border-radius:99px;font-size:15px;font-weight:750;text-decoration:none;cursor:pointer}.primary{border:0;background:var(--green);color:white;box-shadow:0 8px 20px #1d624f29}.actions a{border:1px solid #c9d3cf;background:white;color:var(--ink)}.copy>small{display:block;margin:14px 0 0 18px;color:#81908c}

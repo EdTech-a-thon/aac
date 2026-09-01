@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import VoiceCommonsBrand from '$lib/components/VoiceCommonsBrand.svelte';
 	import { setDashboard, type DashboardState } from '$lib/dashboard';
 	import { ApiError, apiFetch, clearAuth, readAuth } from '$lib/auth';
 	import type { Vocabulary } from '$lib/types';
@@ -208,25 +209,25 @@
 
 <div class="grid h-screen grid-cols-[16rem_1fr] grid-rows-[3rem_1fr] overflow-hidden bg-slate-100">
 	<header
-		class="col-span-2 flex items-center justify-between gap-4 bg-blue-600 px-4 text-white shadow-sm"
+		class="col-span-2 flex items-center justify-between gap-4 bg-[#123c5e] px-4 text-white shadow-sm"
 	>
 		<div class="flex items-center gap-4">
-			<a href="/vocabularies" class="text-sm font-semibold tracking-wide">AAC Manager</a>
+			<a href="/vocabularies" class="no-underline"><VoiceCommonsBrand compact light /></a>
 			<a
 				href="/gallery"
-				class="text-sm text-blue-100 transition hover:text-white"
+				class="text-sm text-sky-100 transition hover:text-white"
 				title="Vocabularies people have published for anyone to try and copy"
 			>
 				Gallery
 			</a>
 		</div>
 		<div class="flex items-center gap-3">
-			<span class="hidden text-sm text-blue-100 sm:inline">
+			<span class="hidden text-sm text-sky-100 sm:inline">
 				{dashboard.auth?.user.name ?? dashboard.auth?.user.email ?? 'User'}
 			</span>
 			<button
 				type="button"
-				class="rounded-md bg-blue-500 px-3 py-1.5 text-sm font-medium transition hover:bg-blue-400"
+				class="rounded-md bg-[#2f7fc4] px-3 py-1.5 text-sm font-medium transition hover:bg-[#3f91d7]"
 				onclick={signOut}
 			>
 				Sign out
