@@ -296,8 +296,9 @@
 			</a>
 			<h1 class="mt-3 text-2xl font-semibold text-slate-900">Settings</h1>
 			<p class="mt-1 text-sm text-slate-600">
-				Edit this Vocabulary’s Palette. Changes join the same unsaved set as board edits — use
-				Save / Suggest in the header.
+				Describe this Vocabulary, publish it to the Gallery, and edit its Palette. Palette
+				changes join the same unsaved set as board edits — use Save / Suggest in the header;
+				the description and publishing are saved on their own.
 			</p>
 		</div>
 		{#if dashboard.auth}
@@ -355,7 +356,7 @@
 		</div>
 	</section>
 
-	<section class="max-w-4xl space-y-3">
+	<section id="gallery" class="max-w-4xl space-y-3 scroll-mt-6">
 		<h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Gallery</h2>
 		{#if dashboard.auth}
 			<PublishToGallery {vocabularyId} auth={dashboard.auth} />

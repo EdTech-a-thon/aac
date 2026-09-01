@@ -373,6 +373,13 @@
 					>
 						Settings
 					</a>
+					<a
+						href={`/vocabularies/${vocabularyId}/settings#gallery`}
+						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+						onclick={() => close()}
+					>
+						Publish to the Gallery…
+					</a>
 					<button
 						type="button"
 						class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"

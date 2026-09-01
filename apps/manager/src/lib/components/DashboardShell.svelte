@@ -210,7 +210,16 @@
 	<header
 		class="col-span-2 flex items-center justify-between gap-4 bg-blue-600 px-4 text-white shadow-sm"
 	>
-		<a href="/vocabularies" class="text-sm font-semibold tracking-wide">AAC Manager</a>
+		<div class="flex items-center gap-4">
+			<a href="/vocabularies" class="text-sm font-semibold tracking-wide">AAC Manager</a>
+			<a
+				href="/gallery"
+				class="text-sm text-blue-100 transition hover:text-white"
+				title="Vocabularies people have published for anyone to try and copy"
+			>
+				Gallery
+			</a>
+		</div>
 		<div class="flex items-center gap-3">
 			<span class="hidden text-sm text-blue-100 sm:inline">
 				{dashboard.auth?.user.name ?? dashboard.auth?.user.email ?? 'User'}
