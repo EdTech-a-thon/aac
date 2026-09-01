@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { loadGallery, type PublicationSummary } from '$lib/vocabularySource';
 	import VoiceCommonsBrand from '$lib/components/VoiceCommonsBrand.svelte';
+	import SiteFooter from '$lib/components/SiteFooter.svelte';
 
 	let query = $state('');
 	let publications = $state<PublicationSummary[]>([]);
@@ -121,4 +122,6 @@
 			{/each}
 		</ul>
 	{/if}
+
+	<SiteFooter />
 </div>

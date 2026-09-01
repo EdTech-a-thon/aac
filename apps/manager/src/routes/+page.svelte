@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { apiFetch, clearAuth, writeAuth, type AuthUser } from '$lib/auth';
 	import VoiceCommonsBrand from '$lib/components/VoiceCommonsBrand.svelte';
+	import SiteFooter from '$lib/components/SiteFooter.svelte';
 	type Mode = 'login' | 'register';
 	let mode = $state<Mode>('register');
 	let name = $state(''), email = $state(''), password = $state('');
@@ -110,6 +111,7 @@
 		</div>
 	</section>
 	<footer class="sitefoot"><a class="brand" href="/"><VoiceCommonsBrand compact /></a><p>Free, open-source AAC for everyone.</p><div><a href="/gallery">Gallery</a><a href="#how">How it works</a></div></footer>
+	<SiteFooter />
 </main>
 
 <style>
