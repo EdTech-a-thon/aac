@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { createMiddleware } from "hono/factory";
-import { createUserSupabaseClient } from "../supabase.ts";
+import { createUserSupabaseClient } from "../supabase.js";
 
 export type AuthVariables = {
   accessToken: string;

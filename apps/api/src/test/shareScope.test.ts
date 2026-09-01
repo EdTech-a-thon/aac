@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scopeBoardShare } from "../shareScope.ts";
+import { scopeBoardShare } from "../shareScope.js";
 
 type Grid = { id: string; kind: "board" | "snippet" };
 type Btn = {

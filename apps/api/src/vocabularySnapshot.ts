@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { VocabularyCopySnapshot } from "./copyVocabulary.ts";
+import type { VocabularyCopySnapshot } from "./copyVocabulary.js";
 
 export type SnapshotGrid = {
   id: string;

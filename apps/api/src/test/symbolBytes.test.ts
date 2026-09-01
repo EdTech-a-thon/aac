@@ -4,7 +4,7 @@ import {
   MAX_SYMBOL_BYTES,
   sniffImageType,
   symbolDigest,
-} from "../symbolBytes.ts";
+} from "../symbolBytes.js";
 
 function bytes(...parts: (number[] | string)[]): Uint8Array {
   const flat: number[] = [];

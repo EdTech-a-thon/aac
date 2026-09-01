@@ -8,8 +8,8 @@
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { apiJson, createTestUser, requireEnv, testApp } from "./helpers.ts";
-import { notifyPendingReports, type ReportMailer } from "../reportNotifier.ts";
+import { apiJson, createTestUser, requireEnv, testApp } from "./helpers.js";
+import { notifyPendingReports, type ReportMailer } from "../reportNotifier.js";
 
 const app = testApp();
 

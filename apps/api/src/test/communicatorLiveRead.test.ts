@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { apiJson, createTestUser, testApp } from "./helpers.ts";
+import { apiJson, createTestUser, testApp } from "./helpers.js";
 
 type Vocabulary = {
   id: string;

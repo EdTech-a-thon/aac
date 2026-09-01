@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getCorsOrigins } from "./corsOrigins.ts";
-import { authRoutes } from "./routes/auth.ts";
-import { galleryRoutes } from "./routes/gallery.ts";
-import { sharedRoutes } from "./routes/shared.ts";
-import { symbolRoutes } from "./routes/symbols.ts";
-import { vocabularyRoutes } from "./routes/vocabularies.ts";
+import { getCorsOrigins } from "./corsOrigins.js";
+import { authRoutes } from "./routes/auth.js";
+import { galleryRoutes } from "./routes/gallery.js";
+import { sharedRoutes } from "./routes/shared.js";
+import { symbolRoutes } from "./routes/symbols.js";
+import { vocabularyRoutes } from "./routes/vocabularies.js";
 
 export function createApp() {
   const app = new Hono();
@@ -28,3 +28,5 @@ export function createApp() {
 
   return app;
 }
+
+export default createApp();

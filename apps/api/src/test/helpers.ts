@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createApp } from "../app.ts";
+import { createApp } from "../app.js";
 
 export function requireEnv(name: string): string {
   const value = process.env[name];

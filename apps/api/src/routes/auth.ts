@@ -1,7 +1,7 @@
 import type { Session, User } from "@supabase/supabase-js";
 import { Hono } from "hono";
-import { isAllowedRedirectUrl } from "../corsOrigins.ts";
-import { createSupabaseClient } from "../supabase.ts";
+import { isAllowedRedirectUrl } from "../corsOrigins.js";
+import { createSupabaseClient } from "../supabase.js";
 
 type AuthBody = {
   email?: string;

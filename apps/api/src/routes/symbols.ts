@@ -1,13 +1,13 @@
 import { Hono } from "hono";
-import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
-import { createServiceSupabaseClient, symbolPublicUrl } from "../supabase.ts";
+import { requireAuth, type AuthVariables } from "../middleware/auth.js";
+import { createServiceSupabaseClient, symbolPublicUrl } from "../supabase.js";
 import {
   CONTENT_TYPE_BY_IMAGE_TYPE,
   isStorableImageType,
   MAX_SYMBOL_BYTES,
   sniffImageType,
   symbolDigest,
-} from "../symbolBytes.ts";
+} from "../symbolBytes.js";
 
 /** Public-read, service-role-write. One object per distinct digest. */
 export const SYMBOL_BUCKET = "symbols";

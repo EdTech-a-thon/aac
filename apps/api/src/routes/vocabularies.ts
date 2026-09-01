@@ -1,14 +1,14 @@
 import { Hono } from "hono";
-import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
-import { createServiceSupabaseClient } from "../supabase.ts";
-import { displayName, withDisplayName } from "../displayName.ts";
+import { requireAuth, type AuthVariables } from "../middleware/auth.js";
+import { createServiceSupabaseClient } from "../supabase.js";
+import { displayName, withDisplayName } from "../displayName.js";
 import {
   prepareBoardCopy,
   remapVocabularySnapshot,
   type VocabularyCopySnapshot,
-} from "../copyVocabulary.ts";
-import { loadFullVocabularySnapshot, snapshotFingerprint } from "../vocabularySnapshot.ts";
-import { publicationFigures, snapshotSymbolDigests } from "../publicationFigures.ts";
+} from "../copyVocabulary.js";
+import { loadFullVocabularySnapshot, snapshotFingerprint } from "../vocabularySnapshot.js";
+import { publicationFigures, snapshotSymbolDigests } from "../publicationFigures.js";
 
 type Vocabulary = {
   id: string;

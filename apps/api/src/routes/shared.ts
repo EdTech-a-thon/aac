@@ -1,13 +1,13 @@
 import { Hono } from "hono";
-import { createServiceSupabaseClient } from "../supabase.ts";
-import { requireAuth, type AuthVariables } from "../middleware/auth.ts";
+import { createServiceSupabaseClient } from "../supabase.js";
+import { requireAuth, type AuthVariables } from "../middleware/auth.js";
 import {
   prepareBoardCopy,
   remapVocabularySnapshot,
   type VocabularyCopySnapshot,
-} from "../copyVocabulary.ts";
-import { withDisplayName } from "../displayName.ts";
-import { scopeBoardShare } from "../shareScope.ts";
+} from "../copyVocabulary.js";
+import { withDisplayName } from "../displayName.js";
+import { scopeBoardShare } from "../shareScope.js";
 
 /**
  * Anonymous reads through a Share Link. The token is the capability, so this

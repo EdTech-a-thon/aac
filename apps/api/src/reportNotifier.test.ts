@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportEmailBody, type ReportRow } from "./reportNotifier.ts";
+import { reportEmailBody, type ReportRow } from "./reportNotifier.js";
 
 function report(partial: Partial<ReportRow> = {}): ReportRow {
   return {

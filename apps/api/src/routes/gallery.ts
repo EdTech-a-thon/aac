@@ -1,13 +1,13 @@
 import { Hono } from "hono";
-import { createServiceSupabaseClient } from "../supabase.ts";
-import { withDisplayName } from "../displayName.ts";
-import { optionalUserId, requireAuth, type AuthVariables } from "../middleware/auth.ts";
-import { remapVocabularySnapshot, type VocabularyCopySnapshot } from "../copyVocabulary.ts";
-import { cloudflareReportMailer, notifyPendingReports } from "../reportNotifier.ts";
+import { createServiceSupabaseClient } from "../supabase.js";
+import { withDisplayName } from "../displayName.js";
+import { optionalUserId, requireAuth, type AuthVariables } from "../middleware/auth.js";
+import { remapVocabularySnapshot, type VocabularyCopySnapshot } from "../copyVocabulary.js";
+import { cloudflareReportMailer, notifyPendingReports } from "../reportNotifier.js";
 import type {
   FullVocabularySnapshot,
   SnapshotButton,
-} from "../vocabularySnapshot.ts";
+} from "../vocabularySnapshot.js";
 
 /**
  * The Gallery's public side. Anonymous by design, so — following ADR 0010 —

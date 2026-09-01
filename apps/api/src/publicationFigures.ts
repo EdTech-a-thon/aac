@@ -1,4 +1,4 @@
-import type { FullVocabularySnapshot } from "./vocabularySnapshot.ts";
+import type { FullVocabularySnapshot } from "./vocabularySnapshot.js";
 
 /**
  * What a Gallery listing shows about a Vocabulary's size, so someone can judge

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestUser, testApp } from "./helpers.ts";
+import { createTestUser, testApp } from "./helpers.js";
 
 /**
  * The upload path at its highest seam: a real request through the real app.

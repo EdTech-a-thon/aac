@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   publicationFigures,
   snapshotSymbolDigests,
-} from "./publicationFigures.ts";
-import type { FullVocabularySnapshot } from "./vocabularySnapshot.ts";
+} from "./publicationFigures.js";
+import type { FullVocabularySnapshot } from "./vocabularySnapshot.js";
 
 const AT = "2026-01-01T00:00:00.000Z";
 

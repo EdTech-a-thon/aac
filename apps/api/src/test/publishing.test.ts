@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { apiJson, createTestUser, requireEnv, testApp } from "./helpers.ts";
+import { apiJson, createTestUser, requireEnv, testApp } from "./helpers.js";
 
 type Vocabulary = { id: string; name: string; description: string };
 type ConsentText = { id: string; clause: string; wording: string };
