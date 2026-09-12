@@ -80,6 +80,10 @@
 	// Keeping a shared Board asks where it should go.
 	let destinationOpen = $state(false);
 	let destinations = $state<Vocabulary[]>([]);
+	let destinationsLoading = $state(false);
+	// Kept apart from saveError: this one belongs to the destination list inside
+	// the modal, not to the page behind it.
+	let destinationsError = $state<string | null>(null);
 	let destinationId = $state('');
 	let destinationName = $state('');
 
@@ -156,10 +160,16 @@
 			destinationId = '';
 			destinationOpen = true;
 			saveError = null;
+			destinations = [];
+			destinationsError = null;
+			destinationsLoading = true;
 			try {
 				destinations = await listOwnVocabularies(auth.session.access_token);
 			} catch {
-				destinations = [];
+				destinationsError =
+					'Could not load your existing vocabularies. You can still copy this into a new one.';
+			} finally {
+				destinationsLoading = false;
 			}
 			return;
 		}
@@ -277,7 +287,7 @@
 	<title>{title || 'Shared'}</title>
 </svelte:head>
 
-<div class="flex h-screen min-h-0 flex-col bg-slate-50">
+<div class="flex h-dvh min-h-0 min-w-0 flex-col bg-slate-50">
 	{#if loading}
 		<p class="m-auto text-sm text-slate-500">Opening…</p>
 	{:else if unavailable}
@@ -286,6 +296,20 @@
 			<p class="mt-2 text-sm text-slate-600">
 				It may have been turned off by the person who shared it. Ask them for a new link.
 			</p>
+			<div class="mt-5 flex flex-wrap justify-center gap-2">
+				<a
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+					href="/gallery"
+				>
+					Browse the Gallery
+				</a>
+				<a
+					class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+					href={signedIn ? '/vocabularies' : '/'}
+				>
+					{signedIn ? 'Your vocabularies' : 'Go to Voice Commons'}
+				</a>
+			</div>
 		</div>
 	{:else if shared && source}
 		<header
@@ -294,21 +318,24 @@
 			<div class="min-w-0">
 				<h1 class="truncate text-base font-semibold text-slate-800">{title}</h1>
 				<p class="text-sm text-slate-500">
-					{shared.board ? 'A board shared with you' : 'A vocabulary shared with you'} — changes
-					you make stay in this browser.
+					{shared.board ? 'A board shared with you.' : 'A vocabulary shared with you.'} Read it, try edits, or make your own copy. The original stays unchanged.
 				</p>
 			</div>
-			<div class="flex shrink-0 items-center gap-2">
-				{#if !shared.board}
-					<button
-						type="button"
-						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-						disabled={saving}
-						onclick={keepThis}
-					>
-						{saving ? 'Saving…' : signedIn ? 'Save to my account' : 'Sign in to save'}
-					</button>
-				{/if}
+			<div class="flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={saving}
+					onclick={keepThis}
+				>
+					{saving
+						? 'Creating copy…'
+						: !signedIn
+							? 'Sign in to copy'
+							: shared.board
+								? 'Copy this board'
+								: 'Make my own copy'}
+				</button>
 				{#if savedAt}
 					<span class="text-sm text-slate-500">Your changes are kept on this device</span>
 				{/if}
@@ -402,7 +429,13 @@
 	</div>
 </Modal>
 
-<Modal bind:open={destinationOpen} title="Keep this board">
+<Modal bind:open={destinationOpen} title="Copy board">
+	<p class="mb-4 text-sm text-slate-600">Make an independent copy, including any edits you tried here. The original stays unchanged.</p>
+	{#if destinationsError}
+		<p class="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+			{destinationsError}
+		</p>
+	{/if}
 	<form
 		class="space-y-3"
 		onsubmit={(event) => {
@@ -423,6 +456,7 @@
 			<select
 				class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
 				bind:value={destinationId}
+				disabled={destinationsLoading}
 			>
 				<option value="">A new vocabulary</option>
 				{#each destinations as candidate (candidate.id)}
@@ -435,13 +469,16 @@
 				? 'Buttons that open another board will need new actions, and colours become fixed to their current shade.'
 				: 'Its colours come across as a palette you can keep editing.'}
 		</p>
+		{#if saveError}
+			<p class="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{saveError}</p>
+		{/if}
 		<div class="flex justify-end">
 			<button
 				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
 				type="submit"
-				disabled={saving}
+				disabled={saving || destinationsLoading}
 			>
-				{saving ? 'Saving…' : 'Keep it'}
+				{destinationsLoading ? 'Loading…' : saving ? 'Creating copy…' : 'Create copy'}
 			</button>
 		</div>
 	</form>

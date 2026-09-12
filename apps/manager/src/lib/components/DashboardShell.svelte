@@ -43,6 +43,17 @@
 	let duplicating = $state(false);
 	let duplicateError = $state<string | null>(null);
 
+	// The vocabulary list is a panel over the page on a phone and a permanent
+	// sidebar from `lg` up, where this stays false and does nothing.
+	let navigationOpen = $state(false);
+
+	// Arriving somewhere new closes it, including navigations no click of ours
+	// started — the back button, or a redirect.
+	$effect(() => {
+		page.url.pathname;
+		navigationOpen = false;
+	});
+
 	const selectedId = $derived(page.params.id ?? null);
 
 	$effect(() => {
@@ -95,6 +106,18 @@
 	function removeVocabulary(id: string) {
 		dashboard.vocabularies = dashboard.vocabularies.filter((v) => v.id !== id);
 	}
+
+	// Separate from the auth mount below, which is async and so cannot clean up
+	// after itself. Growing past `lg` turns the panel back into the sidebar, and
+	// an open panel would leave `main` inert with nothing covering it.
+	onMount(() => {
+		const desktop = window.matchMedia('(min-width: 1024px)');
+		const closeOnDesktop = () => {
+			if (desktop.matches) navigationOpen = false;
+		};
+		desktop.addEventListener('change', closeOnDesktop);
+		return () => desktop.removeEventListener('change', closeOnDesktop);
+	});
 
 	onMount(async () => {
 		const current = readAuth();
@@ -207,22 +230,32 @@
 	}
 </script>
 
-<div class="grid h-screen grid-cols-[16rem_1fr] grid-rows-[3rem_1fr] overflow-hidden bg-slate-100">
+<div class="grid h-dvh grid-cols-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-slate-100 lg:grid-cols-[16rem_minmax(0,1fr)]">
 	<header
-		class="col-span-2 flex items-center justify-between gap-4 bg-[#123c5e] px-4 text-white shadow-sm"
+		class="col-span-full flex items-center justify-between gap-2 bg-[#123c5e] px-4 py-2 text-white shadow-sm"
 	>
-		<div class="flex items-center gap-4">
-			<a href="/vocabularies" class="no-underline"><VoiceCommonsBrand compact light /></a>
+		<div class="flex min-w-0 items-center gap-3">
+			<button
+				type="button"
+				class="rounded-lg border border-white/30 px-2.5 py-2 text-lg leading-none lg:hidden"
+				aria-expanded={navigationOpen}
+				aria-controls="vocabulary-navigation"
+				aria-label="Your vocabularies"
+				onclick={() => (navigationOpen = !navigationOpen)}
+			>
+				☰
+			</button>
+			<a href="/vocabularies" class="min-w-0 no-underline"><VoiceCommonsBrand compact light /></a>
 			<a
 				href="/gallery"
-				class="text-sm text-sky-100 transition hover:text-white"
+				class="hidden text-sm text-sky-100 transition hover:text-white sm:inline"
 				title="Vocabularies people have published for anyone to try and copy"
 			>
 				Gallery
 			</a>
 		</div>
-		<div class="flex items-center gap-3">
-			<span class="hidden text-sm text-sky-100 sm:inline">
+		<div class="flex shrink-0 items-center gap-3">
+			<span class="hidden text-sm text-sky-100 md:inline">
 				{dashboard.auth?.user.name ?? dashboard.auth?.user.email ?? 'User'}
 			</span>
 			<button
@@ -235,7 +268,26 @@
 		</div>
 	</header>
 
-	<aside class="flex min-h-0 flex-col border-r border-slate-200 bg-white">
+	<aside id="vocabulary-navigation" class="{navigationOpen ? 'flex' : 'hidden'} col-start-1 row-start-2 z-40 min-h-0 w-full flex-col border-r border-slate-200 bg-white lg:flex lg:w-auto">
+		<div class="lg:hidden">
+			<div class="flex items-center justify-between border-b border-slate-100 p-3">
+				<h2 class="font-semibold">Your vocabularies</h2>
+				<button
+					type="button"
+					class="rounded-lg px-3 py-2 text-sm font-medium text-blue-700"
+					onclick={() => (navigationOpen = false)}
+				>
+					Close
+				</button>
+			</div>
+			<a
+				href="/gallery"
+				class="block border-b border-slate-100 px-4 py-3 text-sm font-medium text-blue-700"
+				onclick={() => (navigationOpen = false)}
+			>
+				Browse the Gallery
+			</a>
+		</div>
 		<div class="min-h-0 flex-1 overflow-y-auto p-2">
 			{#if dashboard.loading}
 				<p class="px-2 py-4 text-center text-sm text-slate-500">Loading…</p>
@@ -279,12 +331,13 @@
 								>
 									<a
 										href={`/vocabularies/${vocabulary.id}`}
+										onclick={() => (navigationOpen = false)}
 										class="min-w-0 flex-1 truncate px-2.5 py-2 text-sm font-medium"
 									>
 										{vocabulary.displayName}
 									</a>
 									<div
-										class="pr-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100"
+										class="pr-1 lg:opacity-0 transition group-hover:opacity-100 focus-within:opacity-100"
 									>
 										<Menu>
 											{#snippet trigger({ toggle })}
@@ -348,7 +401,7 @@
 		</div>
 	</aside>
 
-<main class="flex min-h-0 flex-col overflow-auto bg-slate-50">
+<main class="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col overflow-auto bg-slate-50 lg:col-start-2" inert={navigationOpen}>
 		{@render children()}
 	</main>
 </div>

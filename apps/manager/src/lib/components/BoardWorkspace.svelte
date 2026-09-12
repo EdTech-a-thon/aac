@@ -3,6 +3,8 @@
 	import { untrack } from 'svelte';
 	import ButtonActionEditor from '$lib/components/ButtonActionEditor.svelte';
 	import ButtonFace from '$lib/components/ButtonFace.svelte';
+	import BoardReader from '$lib/components/BoardReader.svelte';
+	import ShareLinkPanel from '$lib/components/ShareLinkPanel.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { symbolUrl } from '$lib/auth';
@@ -95,6 +97,29 @@
 		| null;
 
 	let selection = $state<CanvasSelection>(null);
+
+	/**
+	 * Reading a board and editing it want opposite things from the same screen:
+	 * reading wants the whole grid at a glance, editing wants a canvas and an
+	 * inspector. Someone who cannot write starts in the view that is useful to
+	 * them rather than in a canvas whose edits go nowhere they can keep.
+	 */
+	let mode = $state<'read' | 'edit'>(untrack(() => source.canWrite) ? 'edit' : 'read');
+	let inspectorOpen = $state(false);
+
+	// On a phone the inspector is a sheet over the canvas, so selecting
+	// something has to raise it — otherwise the properties are unreachable.
+	$effect(() => {
+		if (selection) inspectorOpen = true;
+	});
+
+	function setMode(next: 'read' | 'edit') {
+		mode = next;
+		selection = null;
+		cellMenu = null;
+		fittedBoardId = null;
+	}
+
 	let loadingBoards = $state(true);
 	let loadingButtons = $state(true);
 	let error = $state<string | null>(null);
@@ -223,6 +248,11 @@
 	);
 
 	const selectedGridNoun = $derived(selectedBoard && isSnippet(selectedBoard) ? 'snippet' : 'board');
+
+	// Snippets are never shared or copied on their own — they travel with a Board.
+	const canShareBoard = $derived(
+		selectedBoard != null && !isSnippet(selectedBoard) && source.canWrite
+	);
 
 	const selectedButton = $derived.by(() => {
 		const current = selection;
@@ -472,7 +502,7 @@
 
 		const contentW = Math.max(maxX - minX, 1);
 		const contentH = Math.max(maxY - minY, 1);
-		const padding = 64;
+		const padding = el.clientWidth < 640 ? 16 : 64;
 		const availableW = Math.max(el.clientWidth - padding * 2, 100);
 		const availableH = Math.max(el.clientHeight - padding * 2, 100);
 		const nextZoom = clampZoom(
@@ -650,6 +680,7 @@
 
 	$effect(() => {
 		function onKeyDown(event: KeyboardEvent) {
+			if (mode !== 'edit' || document.querySelector('dialog[open]')) return;
 			if (event.code === 'Space' && !isEditableTarget(event.target)) {
 				event.preventDefault();
 				spaceDown = true;
@@ -753,7 +784,6 @@
 	let boardShareOpen = $state(false);
 	let boardShareLink = $state<ShareLink | null>(null);
 	let boardShareBusy = $state(false);
-	let boardShareCopied = $state(false);
 	let boardShareError = $state<string | null>(null);
 	const boardShareUrl = $derived(
 		boardShareLink && typeof window !== 'undefined'
@@ -765,7 +795,6 @@
 		if (!selectedBoard || isSnippet(selectedBoard) || !source.canWrite) return;
 		boardShareOpen = true;
 		boardShareError = null;
-		boardShareCopied = false;
 		boardShareLink = null;
 		boardShareBusy = true;
 		try {
@@ -783,7 +812,6 @@
 		boardShareError = null;
 		try {
 			boardShareLink = await source.createBoardShareLink(vocabularyId, selectedBoard.id);
-			boardShareCopied = false;
 		} catch (err) {
 			boardShareError = err instanceof Error ? err.message : 'Failed to create a link';
 		} finally {
@@ -798,21 +826,10 @@
 		try {
 			await source.revokeBoardShareLink(vocabularyId, selectedBoard.id);
 			boardShareLink = null;
-			boardShareCopied = false;
 		} catch (err) {
 			boardShareError = err instanceof Error ? err.message : 'Failed to turn off the link';
 		} finally {
 			boardShareBusy = false;
-		}
-	}
-
-	async function copyBoardShareUrl() {
-		if (!boardShareUrl) return;
-		try {
-			await navigator.clipboard.writeText(boardShareUrl);
-			boardShareCopied = true;
-		} catch {
-			boardShareError = 'Could not copy the link — select it and copy manually.';
 		}
 	}
 
@@ -822,6 +839,7 @@
 		copyDestinationId = vocabularyId;
 		copyError = null;
 		copyOpen = true;
+		copyVocabularies = [];
 		try {
 			copyVocabularies = await source.listCopyDestinations();
 		} catch (err) {
@@ -1527,7 +1545,7 @@
 
 <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 	<div>
-		<div class="relative z-20 flex items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+		<div class="relative z-20 flex flex-wrap items-center justify-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
 		{#if loadingBoards}
 			<p class="text-sm text-slate-500">Loading…</p>
 		{:else}
@@ -1633,52 +1651,97 @@
 			{/if}
 
 			{#if selectedBoard}
-			<Menu>
-				{#snippet trigger({ toggle })}
+				<div class="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Board mode">
+					<button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium {mode === 'read' ? 'bg-blue-100 text-blue-800' : 'text-slate-600'}" aria-pressed={mode === 'read'} onclick={() => setMode('read')}>Read</button>
+					<button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium {mode === 'edit' ? 'bg-blue-100 text-blue-800' : 'text-slate-600'}" aria-pressed={mode === 'edit'} onclick={() => setMode('edit')}>{source.canWrite ? 'Edit' : 'Try edits'}</button>
+				</div>
+				{#if canShareBoard}
 					<button
 						type="button"
-						class="rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-						aria-label={isSnippet(selectedBoard) ? 'Snippet options' : 'Board options'}
-						onclick={toggle}
+						class="hidden rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 sm:inline-flex"
+						onclick={openCopy}
 					>
-						⋯
-					</button>
-				{/snippet}
-				{#snippet children({ close })}
-					{#if !isSnippet(selectedBoard) && source.canWrite}
-						<button
-							type="button"
-							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-							onclick={() => { close(); openCopy(); }}
-						>Copy board</button>
-						<button
-							type="button"
-							class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-							onclick={() => { close(); openBoardShare(); }}
-						>Share board…</button>
-					{/if}
-					<button
-						type="button"
-						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-						onclick={() => {
-							close();
-							openRename();
-						}}
-					>
-						Rename {selectedGridNoun}
+						Copy board
 					</button>
 					<button
 						type="button"
-						class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"
-						onclick={() => {
-							close();
-							openDelete();
-						}}
+						class="hidden rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 sm:inline-flex"
+						onclick={openBoardShare}
 					>
-						Delete {selectedGridNoun}
+						Share board
 					</button>
-				{/snippet}
-			</Menu>
+				{/if}
+				{#if mode === 'edit'}
+					<button
+						type="button"
+						class="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 lg:hidden"
+						aria-expanded={inspectorOpen}
+						onclick={() => (inspectorOpen = !inspectorOpen)}
+					>
+						Properties
+					</button>
+				{/if}
+
+				{#if canShareBoard || mode === 'edit'}
+					<Menu>
+						{#snippet trigger({ toggle })}
+							<button
+								type="button"
+								class="rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+								aria-label={isSnippet(selectedBoard) ? 'Snippet options' : 'Board options'}
+								onclick={toggle}
+							>
+								⋯
+							</button>
+						{/snippet}
+						{#snippet children({ close })}
+							{#if canShareBoard}
+								<button
+									type="button"
+									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 sm:hidden"
+									onclick={() => {
+										close();
+										openCopy();
+									}}
+								>
+									Copy board
+								</button>
+								<button
+									type="button"
+									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 sm:hidden"
+									onclick={() => {
+										close();
+										openBoardShare();
+									}}
+								>
+									Share board
+								</button>
+							{/if}
+							{#if mode === 'edit'}
+								<button
+									type="button"
+									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+									onclick={() => {
+										close();
+										openRename();
+									}}
+								>
+									Rename {selectedGridNoun}
+								</button>
+								<button
+									type="button"
+									class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"
+									onclick={() => {
+										close();
+										openDelete();
+									}}
+								>
+									Delete {selectedGridNoun}
+								</button>
+							{/if}
+						{/snippet}
+					</Menu>
+				{/if}
 			{/if}
 		{/if}
 		</div>
@@ -1687,15 +1750,17 @@
 		{/if}
 	</div>
 
-	{#if selectedBoard}
-		<div class="grid h-full min-h-0 grid-cols-[1fr_18rem] grid-rows-[minmax(0,1fr)]">
+	{#if selectedBoard && mode === 'read'}
+		<BoardReader board={selectedBoard} {boards} {buttonsByBoardId} inclusions={snippetInclusions} paletteById={paletteHexById} onOpenBoard={setSelectedBoardId} />
+	{:else if selectedBoard}
+		<div class="relative grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_18rem]">
 			<!-- Canvas -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				bind:this={canvasEl}
 				role="application"
 				aria-label={selectedBoard && isSnippet(selectedBoard) ? 'Snippet canvas' : 'Board canvas'}
-				class="relative min-h-0 overflow-hidden bg-slate-100 {spaceDown || isPanning
+				class="relative min-h-0 min-w-0 touch-none overflow-hidden bg-slate-100 {spaceDown || isPanning
 					? 'cursor-grab'
 					: 'cursor-default'} {isPanning ? 'cursor-grabbing' : ''}"
 				style="background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px); background-size: 24px 24px; background-position: {panX}px {panY}px;"
@@ -1948,16 +2013,18 @@
 					</div>
 				{/if}
 
-				<div
-					class="pointer-events-none absolute bottom-3 left-3 rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-slate-500 shadow-sm"
-				>
-					{Math.round(zoom * 100)}% · Scroll to pan · ⌘/Ctrl+scroll to zoom · Drag buttons to move
+				<div class="absolute bottom-3 left-3 right-3 z-20 flex flex-wrap items-center gap-1">
+					<button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm" aria-label="Zoom out" onclick={() => zoom = clampZoom(zoom / 1.25)}>−</button>
+					<button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm" onclick={fitBoardInView}>Fit board</button>
+					<button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm" aria-label="Zoom in" onclick={() => zoom = clampZoom(zoom * 1.25)}>+</button>
+					<span class="rounded bg-white/90 px-2 py-1 text-xs text-slate-500">{Math.round(zoom * 100)}%</span>
 				</div>
 			</div>
 
 			<!-- Properties sidebar -->
-			<aside class="flex min-h-0 flex-col border-l border-slate-200 bg-white">
-				<div class="border-b border-slate-100 px-4 py-3">
+			<aside class="{inspectorOpen ? 'flex' : 'hidden'} absolute inset-x-0 bottom-0 z-30 max-h-[65%] min-h-0 flex-col rounded-t-2xl border border-slate-200 bg-white shadow-xl lg:static lg:flex lg:max-h-none lg:rounded-none lg:border-0 lg:border-l lg:shadow-none" aria-label="Properties">
+				<div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+					<button type="button" class="order-last rounded-lg px-3 py-2 text-sm font-medium text-blue-700 lg:hidden" onclick={() => inspectorOpen = false}>Done</button>
 					<h2 class="text-sm font-semibold text-slate-900">
 						{selectedButton
 							? 'Button'
@@ -2318,74 +2385,38 @@
 </Modal>
 
 <Modal bind:open={boardShareOpen} title="Share board">
-	<div class="space-y-3">
-		<p class="text-sm text-slate-600">
-			Anyone with the link can see this board and the snippets it uses — not the rest of
-			the vocabulary. Buttons that open another board do nothing for them.
-		</p>
-		{#if boardShareError}
-			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{boardShareError}</p>
-		{/if}
-		{#if boardShareBusy && !boardShareLink}
-			<p class="text-sm text-slate-500">Loading…</p>
-		{:else if boardShareLink}
-			<div class="flex flex-wrap items-center gap-2">
-				<input
-					class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 outline-none"
-					type="text"
-					readonly
-					value={boardShareUrl}
-				/>
-				<button
-					type="button"
-					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-					onclick={copyBoardShareUrl}
-				>
-					{boardShareCopied ? 'Copied' : 'Copy'}
-				</button>
-				<button
-					type="button"
-					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={boardShareBusy}
-					onclick={revokeBoardShare}
-				>
-					{boardShareBusy ? 'Turning off…' : 'Turn off'}
-				</button>
-			</div>
-		{:else}
-			<button
-				type="button"
-				class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-				disabled={boardShareBusy}
-				onclick={createBoardShare}
-			>
-				{boardShareBusy ? 'Creating…' : 'Create a public link'}
-			</button>
-		{/if}
-	</div>
+	{#if boardShareError}<p class="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{boardShareError}</p>{/if}
+	{#if boardShareBusy && !boardShareLink}
+		<p class="text-sm text-slate-500">Loading…</p>
+	{:else}
+		<ShareLinkPanel url={boardShareUrl} busy={boardShareBusy} scope="board" onCreate={createBoardShare} onRevoke={revokeBoardShare} />
+	{/if}
 </Modal>
 
 <Modal bind:open={copyOpen} title="Copy board">
 	<form class="space-y-4" id="copy-board-form" onsubmit={copyBoard}>
-		<p class="text-sm text-slate-600">The copy is Applied immediately. Your pending edits remain unapplied.</p>
+		<p class="text-sm text-slate-600">Make an independent copy of what you see, including pending edits. The original stays unchanged. You’ll open the new board next.</p>
 		<label class="block space-y-1.5">
 			<span class="text-sm font-medium text-slate-700">Name</span>
 			<input class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" bind:value={copyName} />
 		</label>
 		<label class="block space-y-1.5">
-			<span class="text-sm font-medium text-slate-700">Destination Vocabulary</span>
+			<span class="text-sm font-medium text-slate-700">Copy into vocabulary</span>
 			<select class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" bind:value={copyDestinationId}>
 				{#each copyVocabularies as vocabulary (vocabulary.id)}
 					<option value={vocabulary.id}>{vocabulary.displayName}</option>
 				{/each}
 			</select>
 		</label>
+		{#if copyDestinationId && copyDestinationId !== vocabularyId}
+			<p class="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Included snippets are copied too. Colours stay fixed to their current shade. Buttons opening other boards will need new actions.</p>
+		{/if}
 		{#if copyError}<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{copyError}</p>{/if}
 	</form>
 	{#snippet footer()}
 		<button type="button" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onclick={() => (copyOpen = false)}>Cancel</button>
-		<button type="submit" form="copy-board-form" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={copyBusy || !copyDestinationId}>
-			{copyBusy ? 'Copying…' : 'Copy and apply'}
+		<button type="submit" form="copy-board-form" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={copyBusy || !copyVocabularies.some((v) => v.id === copyDestinationId)}>
+			{copyBusy ? 'Copying…' : 'Create copy'}
 		</button>
 	{/snippet}
 </Modal>

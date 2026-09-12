@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import ShareLinkPanel from '$lib/components/ShareLinkPanel.svelte';
 	import BoardWorkspace from '$lib/components/BoardWorkspace.svelte';
 	import { managedVocabularySource } from '$lib/vocabularySource';
 	import VocabularyChangeActions from '$lib/components/VocabularyChangeActions.svelte';
@@ -37,6 +38,7 @@
 	let savingName = $state(false);
 
 	let shareOpen = $state(false);
+	let shareTab = $state<'link' | 'people'>('link');
 	let inviteEmail = $state('');
 	let inviteCommunicatorEmail = $state('');
 	let inviting = $state(false);
@@ -50,7 +52,6 @@
 
 	let shareLink = $state<ShareLink | null>(null);
 	let shareLinkBusy = $state(false);
-	let shareLinkCopied = $state(false);
 	const shareLinkUrl = $derived(
 		shareLink && typeof window !== 'undefined'
 			? `${window.location.origin}/shared/${shareLink.token}`
@@ -67,7 +68,6 @@
 				{ method: 'POST', accessToken: dashboard.auth.session.access_token }
 			);
 			shareLink = data.shareLink;
-			shareLinkCopied = false;
 		} catch (err) {
 			shareError = err instanceof Error ? err.message : 'Failed to create a link';
 		} finally {
@@ -85,21 +85,10 @@
 				accessToken: dashboard.auth.session.access_token
 			});
 			shareLink = null;
-			shareLinkCopied = false;
 		} catch (err) {
 			shareError = err instanceof Error ? err.message : 'Failed to turn off the link';
 		} finally {
 			shareLinkBusy = false;
-		}
-	}
-
-	async function copyShareLink() {
-		if (!shareLinkUrl) return;
-		try {
-			await navigator.clipboard.writeText(shareLinkUrl);
-			shareLinkCopied = true;
-		} catch {
-			shareError = 'Could not copy the link — select it and copy manually.';
 		}
 	}
 
@@ -193,6 +182,7 @@
 		inviteCommunicatorEmail = '';
 		shareError = null;
 		shareMessage = null;
+		shareTab = 'link';
 		shareOpen = true;
 	}
 
@@ -309,12 +299,13 @@
 		</p>
 	</div>
 {:else}
-	<div class="grid h-full min-h-0 grid-rows-[auto_1fr]">
+	<div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
 		<header
 			class="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm"
 		>
 			<input
-				class="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-lg font-semibold text-slate-900 outline-none transition hover:border-slate-200 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+				aria-label="Vocabulary name"
+				class="min-w-0 basis-full sm:basis-auto flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-lg font-semibold text-slate-900 outline-none transition hover:border-slate-200 focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20"
 				type="text"
 				placeholder="Untitled"
 				bind:value={nameDraft}
@@ -347,7 +338,7 @@
 				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
 				onclick={openShare}
 			>
-				Share
+				Share vocabulary
 			</button>
 
 			{#if dashboard.auth}
@@ -410,8 +401,19 @@
 
 <Modal bind:open={shareOpen} title="Share vocabulary">
 	<div class="space-y-6">
+		<div class="flex gap-2 border-b border-slate-200 pb-3" role="group" aria-label="Sharing options">
+			<button type="button" class="flex-1 rounded-lg px-3 py-2 text-sm font-medium {shareTab === 'link' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}" aria-pressed={shareTab === 'link'} onclick={() => shareTab = 'link'}>Share a link</button>
+			<button type="button" class="flex-1 rounded-lg px-3 py-2 text-sm font-medium {shareTab === 'people' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}" aria-pressed={shareTab === 'people'} onclick={() => shareTab = 'people'}>People & access</button>
+		</div>
+		{#if shareTab === 'link'}
+			<ShareLinkPanel url={shareLinkUrl} busy={shareLinkBusy} scope="vocabulary" onCreate={createShareLink} onRevoke={revokeShareLink} />
+			<p class="text-sm text-slate-500">Want to share just one board? Use <strong>Share board</strong> above the board.</p>
+		{:else}
+		<p class="text-sm text-slate-600">Give someone access to the original vocabulary. They must already have an account.</p>
+
 		<section class="space-y-3">
 			<h3 class="text-sm font-semibold text-slate-800">Managers</h3>
+			<p class="text-sm text-slate-500">Can edit and share all boards. At least one manager is required.</p>
 			<ul class="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
 				{#each managers as manager (manager.userId)}
 					<li class="flex items-center justify-between gap-3 px-3 py-2.5">
@@ -439,7 +441,7 @@
 				<input
 					class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
 					type="email"
-					placeholder="Invite by email"
+					placeholder="Email address" aria-label="Account email"
 					required
 					bind:value={inviteEmail}
 				/>
@@ -455,6 +457,7 @@
 
 		<section class="space-y-3">
 			<h3 class="text-sm font-semibold text-slate-800">Communicators</h3>
+			<p class="text-sm text-slate-500">Can use the vocabulary to communicate, but cannot edit it.</p>
 			<ul class="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
 				{#each communicators as communicator (communicator.userId)}
 					<li class="flex items-center justify-between gap-3 px-3 py-2.5">
@@ -487,7 +490,7 @@
 				<input
 					class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
 					type="email"
-					placeholder="Invite by email"
+					placeholder="Email address" aria-label="Account email"
 					required
 					bind:value={inviteCommunicatorEmail}
 				/>
@@ -501,49 +504,7 @@
 			</form>
 		</section>
 
-		<section class="space-y-3">
-			<div>
-				<h3 class="text-sm font-semibold text-slate-800">Public link</h3>
-				<p class="mt-1 text-sm text-slate-500">
-					Anyone with the link can see this vocabulary without an account. Turning it off
-					makes that link stop working for good.
-				</p>
-			</div>
-			{#if shareLink}
-				<div class="flex flex-wrap items-center gap-2">
-					<input
-						class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 outline-none"
-						type="text"
-						readonly
-						value={shareLinkUrl}
-					/>
-					<button
-						type="button"
-						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-						onclick={copyShareLink}
-					>
-						{shareLinkCopied ? 'Copied' : 'Copy'}
-					</button>
-					<button
-						type="button"
-						class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-						disabled={shareLinkBusy}
-						onclick={revokeShareLink}
-					>
-						{shareLinkBusy ? 'Turning off…' : 'Turn off'}
-					</button>
-				</div>
-			{:else}
-				<button
-					type="button"
-					class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={shareLinkBusy}
-					onclick={createShareLink}
-				>
-					{shareLinkBusy ? 'Creating…' : 'Create a public link'}
-				</button>
-			{/if}
-		</section>
+		{/if}
 
 		{#if shareMessage}
 			<p class="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">{shareMessage}</p>
@@ -552,9 +513,6 @@
 			<p class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{shareError}</p>
 		{/if}
 
-		<p class="text-sm text-slate-500">
-			The person must already have an account. A vocabulary always keeps at least one manager.
-		</p>
 	</div>
 </Modal>
 

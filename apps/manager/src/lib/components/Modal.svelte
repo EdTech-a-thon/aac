@@ -47,7 +47,8 @@
 
 <dialog
 	bind:this={dialog}
-	class="m-auto w-full max-w-md rounded-xl border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40"
+	class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40"
+	aria-label={title}
 	onclick={(event) => {
 		if (event.target === dialog) requestClose();
 	}}
@@ -67,7 +68,7 @@
 		{@render children()}
 	</div>
 	{#if footer}
-		<div class="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+		<div class="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
 			{@render footer()}
 		</div>
 	{/if}
