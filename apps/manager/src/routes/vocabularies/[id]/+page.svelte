@@ -392,7 +392,7 @@
 			{/if}
 			{#if vocabularySource}
 				<div class="min-h-0 flex-1">
-					<BoardWorkspace vocabularyId={vocabulary.id} source={vocabularySource} />
+					<BoardWorkspace vocabularyId={vocabulary.id} vocabularyName={vocabulary.displayName} source={vocabularySource} />
 				</div>
 			{/if}
 		</div>

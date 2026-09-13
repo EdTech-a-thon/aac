@@ -380,7 +380,7 @@
 		{/if}
 
 		<div class="min-h-0 flex-1">
-			<BoardWorkspace vocabularyId={canvasId} {source} />
+			<BoardWorkspace vocabularyId={canvasId} vocabularyName={published.title} {source} />
 		</div>
 
 		<footer class="shrink-0 border-t border-slate-200 bg-white px-4 py-2 text-right">

@@ -4,6 +4,7 @@
 	import ButtonActionEditor from '$lib/components/ButtonActionEditor.svelte';
 	import ButtonFace from '$lib/components/ButtonFace.svelte';
 	import BoardReader from '$lib/components/BoardReader.svelte';
+	import ExportPdf from '$lib/components/ExportPdf.svelte';
 	import ShareLinkPanel from '$lib/components/ShareLinkPanel.svelte';
 	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -41,9 +42,11 @@
 
 	let {
 		vocabularyId,
+		vocabularyName = 'Vocabulary',
 		source
 	}: {
 		vocabularyId: string;
+		vocabularyName?: string;
 		source: VocabularySource;
 	} = $props();
 
@@ -1651,6 +1654,7 @@
 			{/if}
 
 			{#if selectedBoard}
+				<ExportPdf {boards} {buttonsByBoardId} inclusions={snippetInclusions} palette={paletteHexById} {selectedBoard} {vocabularyName} disabled={loadingBoards || loadingButtons} />
 				<div class="flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Board mode">
 					<button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium {mode === 'read' ? 'bg-blue-100 text-blue-800' : 'text-slate-600'}" aria-pressed={mode === 'read'} onclick={() => setMode('read')}>Read</button>
 					<button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium {mode === 'edit' ? 'bg-blue-100 text-blue-800' : 'text-slate-600'}" aria-pressed={mode === 'edit'} onclick={() => setMode('edit')}>{source.canWrite ? 'Edit' : 'Try edits'}</button>
