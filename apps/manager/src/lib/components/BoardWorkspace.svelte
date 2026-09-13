@@ -756,9 +756,10 @@
 		newBoardHeight = 5;
 	}
 
-	function openRename() {
-		if (!selectedBoard) return;
-		renameDraft = selectedBoard.name;
+	function openRename(board: Board) {
+		setSelectedBoardId(board.id);
+		fittedBoardId = null;
+		renameDraft = board.name;
 		renameError = null;
 		renameOpen = true;
 	}
@@ -1544,6 +1545,38 @@
 	}
 </script>
 
+{#snippet boardPickerRow(board: Board, close: () => void)}
+	<div class="flex items-center {board.id === selectedBoardId ? 'bg-blue-50 text-blue-800' : 'text-slate-700'}">
+		<button
+			type="button"
+			class="min-w-0 flex-1 px-3 py-2 text-left text-sm break-words transition hover:bg-slate-50 {board.id === selectedBoardId ? 'font-medium' : ''}"
+			onclick={() => {
+				setSelectedBoardId(board.id);
+				fittedBoardId = null;
+				close();
+			}}
+		>
+			{board.displayName}
+		</button>
+		{#if mode === 'edit'}
+			<button
+				type="button"
+				class="m-1 inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-blue-100 hover:text-blue-700"
+				aria-label={`Rename ${isSnippet(board) ? 'snippet' : 'board'} ${board.displayName}`}
+				title={`Rename ${isSnippet(board) ? 'snippet' : 'board'}`}
+				onclick={() => {
+					close();
+					openRename(board);
+				}}
+			>
+				<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="m16 3 5 5M4 15 16 3a2 2 0 0 1 5 5L9 20l-6 1 1-6Z" />
+				</svg>
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
 <svelte:window onpaste={onWindowPaste} />
 
 <div class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
@@ -1586,20 +1619,7 @@
 								<p class="px-3 py-1.5 text-sm text-slate-500">No boards yet</p>
 							{:else}
 								{#each destinationBoards as board (board.id)}
-									<button
-										type="button"
-										class="flex w-full items-center px-3 py-2 text-left text-sm transition {board.id ===
-										selectedBoardId
-											? 'bg-blue-50 font-medium text-blue-800'
-											: 'text-slate-700 hover:bg-slate-50'}"
-										onclick={() => {
-											setSelectedBoardId(board.id);
-											fittedBoardId = null;
-											close();
-										}}
-									>
-										{board.displayName}
-									</button>
+									{@render boardPickerRow(board, close)}
 								{/each}
 							{/if}
 							<button
@@ -1622,20 +1642,7 @@
 								<p class="px-3 py-1.5 text-sm text-slate-500">No snippets yet</p>
 							{:else}
 								{#each snippets as snippet (snippet.id)}
-									<button
-										type="button"
-										class="flex w-full items-center px-3 py-2 text-left text-sm transition {snippet.id ===
-										selectedBoardId
-											? 'bg-blue-50 font-medium text-blue-800'
-											: 'text-slate-700 hover:bg-slate-50'}"
-										onclick={() => {
-											setSelectedBoardId(snippet.id);
-											fittedBoardId = null;
-											close();
-										}}
-									>
-										{snippet.displayName}
-									</button>
+									{@render boardPickerRow(snippet, close)}
 								{/each}
 							{/if}
 							<button
@@ -1662,14 +1669,14 @@
 				{#if canShareBoard}
 					<button
 						type="button"
-						class="hidden rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 sm:inline-flex"
+						class="inline-flex rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
 						onclick={openCopy}
 					>
 						Copy board
 					</button>
 					<button
 						type="button"
-						class="hidden rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 sm:inline-flex"
+						class="inline-flex rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
 						onclick={openBoardShare}
 					>
 						Share board
@@ -1686,65 +1693,18 @@
 					</button>
 				{/if}
 
-				{#if canShareBoard || mode === 'edit'}
-					<Menu>
-						{#snippet trigger({ toggle })}
-							<button
-								type="button"
-								class="rounded-xl border border-slate-200 bg-white px-2.5 py-2.5 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-								aria-label={isSnippet(selectedBoard) ? 'Snippet options' : 'Board options'}
-								onclick={toggle}
-							>
-								⋯
-							</button>
-						{/snippet}
-						{#snippet children({ close })}
-							{#if canShareBoard}
-								<button
-									type="button"
-									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 sm:hidden"
-									onclick={() => {
-										close();
-										openCopy();
-									}}
-								>
-									Copy board
-								</button>
-								<button
-									type="button"
-									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 sm:hidden"
-									onclick={() => {
-										close();
-										openBoardShare();
-									}}
-								>
-									Share board
-								</button>
-							{/if}
-							{#if mode === 'edit'}
-								<button
-									type="button"
-									class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-									onclick={() => {
-										close();
-										openRename();
-									}}
-								>
-									Rename {selectedGridNoun}
-								</button>
-								<button
-									type="button"
-									class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"
-									onclick={() => {
-										close();
-										openDelete();
-									}}
-								>
-									Delete {selectedGridNoun}
-								</button>
-							{/if}
-						{/snippet}
-					</Menu>
+				{#if mode === 'edit'}
+					<button
+						type="button"
+						class="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-red-200 bg-white text-red-700 shadow-sm transition hover:bg-red-50"
+						aria-label={`Delete ${selectedGridNoun}`}
+						title={`Delete ${selectedGridNoun}`}
+						onclick={openDelete}
+					>
+						<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7M14 10v7" />
+						</svg>
+					</button>
 				{/if}
 			{/if}
 		{/if}
