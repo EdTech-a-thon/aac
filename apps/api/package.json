@@ -4,8 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "node --env-file=.env.local --watch --experimental-strip-types src/dev.ts",
-    "start": "node --experimental-strip-types src/dev.ts",
+    "dev": "node --env-file=.env.local --watch --experimental-strip-types --import ./tsExtensionResolver.register.mjs src/dev.ts",
+    "start": "node --experimental-strip-types --import ./tsExtensionResolver.register.mjs src/dev.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
