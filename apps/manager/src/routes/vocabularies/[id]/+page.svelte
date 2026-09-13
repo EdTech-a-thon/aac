@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import Menu from '$lib/components/Menu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import ShareLinkPanel from '$lib/components/ShareLinkPanel.svelte';
 	import BoardWorkspace from '$lib/components/BoardWorkspace.svelte';
@@ -341,49 +340,30 @@
 				Share vocabulary
 			</button>
 
+			<a
+				href={`/vocabularies/${vocabularyId}/settings#gallery`}
+				class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+			>
+				Publish to gallery
+			</a>
+			<button
+				type="button"
+				class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 transition hover:bg-red-50"
+				aria-label="Delete vocabulary"
+				title="Delete vocabulary"
+				onclick={() => {
+					deleteError = null;
+					deleteOpen = true;
+				}}
+			>
+				<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M3 6h18M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14M10 10v7M14 10v7" />
+				</svg>
+			</button>
+
 			{#if dashboard.auth}
 				<VocabularyChangeActions vocabularyId={vocabularyId} auth={dashboard.auth} />
 			{/if}
-
-			<Menu>
-				{#snippet trigger({ toggle })}
-					<button
-						type="button"
-						class="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-						aria-label="Vocabulary menu"
-						onclick={toggle}
-					>
-						⋯
-					</button>
-				{/snippet}
-				{#snippet children({ close })}
-					<a
-						href={`/vocabularies/${vocabularyId}/settings`}
-						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-						onclick={() => close()}
-					>
-						Settings
-					</a>
-					<a
-						href={`/vocabularies/${vocabularyId}/settings#gallery`}
-						class="block w-full px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
-						onclick={() => close()}
-					>
-						Publish to the Gallery…
-					</a>
-					<button
-						type="button"
-						class="block w-full px-3 py-2 text-left text-sm text-red-700 transition hover:bg-red-50"
-						onclick={() => {
-							close();
-							deleteError = null;
-							deleteOpen = true;
-						}}
-					>
-						Delete vocabulary
-					</button>
-				{/snippet}
-			</Menu>
 		</header>
 
 <div class="flex h-full min-h-0 flex-col overflow-hidden">
