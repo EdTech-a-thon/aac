@@ -75,4 +75,18 @@
 		width: 1.65rem;
 		height: 1.65rem;
 	}
+
+	/* On the narrowest phones the full lockup crowds out whatever sits beside it
+	   in a header bar, so it steps down without becoming the compact variant. */
+	@media (max-width: 360px) {
+		.voicecommons-brand:not(.compact) {
+			gap: 0.55rem;
+			font-size: 1.3rem;
+		}
+
+		.voicecommons-brand:not(.compact) svg {
+			width: 2.25rem;
+			height: 2.25rem;
+		}
+	}
 </style>
